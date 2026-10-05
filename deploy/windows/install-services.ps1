@@ -73,6 +73,29 @@ function Test-FileExists {
 # and the object store. Windows starts services in parallel by default, so the
 # dependencies are declared rather than assumed.
 
+# The PostgreSQL service name carries its major version, and which version you
+# can install depends on the operating system: 15 and later require Windows
+# Server 2016+, so a 2012 R2 host runs 14 and registers `postgresql-x64-14`.
+#
+# A hard-coded version here fails quietly rather than loudly. The dependency is
+# applied only if the named service exists (see the `sc.exe config` below), so
+# on a 2012 R2 machine `postgresql-x64-16` matched nothing, the filter dropped
+# it, and the API came up with no database dependency at all — starting in
+# parallel with Postgres and racing it on every boot. NSSM's restart eventually
+# hid the race, which is what made it worth removing rather than documenting.
+#
+# Matching the same wildcard the prerequisite check below uses, so the two
+# cannot disagree about what counts as "PostgreSQL is installed". That check
+# exits before any service is registered, so this always finds a service here.
+$postgresService = Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue |
+    Sort-Object Name |
+    Select-Object -First 1
+
+$postgresDependency = @()
+if ($null -ne $postgresService) {
+    $postgresDependency = @($postgresService.Name)
+}
+
 $Services = @(
     @{
         Name        = 'tailieu-api'
@@ -81,7 +104,7 @@ $Services = @(
         Command     = $null   # filled in after Node is located
         Args        = 'dist/server.js'
         Directory   = "$InstallRoot\backend"
-        DependsOn   = @('postgresql-x64-16', 'Memurai')
+        DependsOn   = $postgresDependency + @('Memurai')
     },
     @{
         Name        = 'tailieu-worker'
