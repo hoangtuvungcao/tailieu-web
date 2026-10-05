@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import { env, isProduction } from './config/env.js';
 import { redis } from './db/redis.js';
+import { applyClientIp } from './lib/http/client-ip.js';
 import { authPlugin } from './plugins/auth.plugin.js';
 import { envelopePlugin } from './plugins/envelope.plugin.js';
 import { systemStatePlugin } from './plugins/system-state.plugin.js';
@@ -22,11 +23,12 @@ import { registerRoutes } from './routes/index.js';
  */
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
-    // Trust the proxy header only when explicitly configured. Behind
-    // Cloudflare Tunnel the true client IP arrives in X-Forwarded-For, and
-    // rate limiting keyed on the tunnel's address would throttle everyone as
-    // one client. Trusting it unconditionally would let anyone spoof their IP
-    // and bypass rate limits, so it is opt-in.
+    // Kept for Fastify's own use — request logging and `request.protocol` — and
+    // deliberately NOT how the client address is recovered. Fastify's
+    // `trustProxy` believes `X-Forwarded-For` from any peer, so switching it on
+    // would let anyone who can reach this process pick their own rate-limit
+    // bucket. The address is resolved instead by `lib/http/client-ip.ts`, which
+    // believes the header only from a loopback peer.
     trustProxy: env.TRUST_PROXY,
 
     // Request ids correlate an API log line, a response header, and the
@@ -97,6 +99,15 @@ export async function buildApp(): Promise<FastifyInstance> {
     // same origin in production; either way the API is not embedded.
     crossOriginEmbedderPolicy: false,
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  });
+
+  // --- Client address --------------------------------------------------------
+  // Must run before every rate limiter and every handler that records an
+  // address, so it is registered first. Without it the tunnel makes every
+  // visitor `127.0.0.1` and the rate limits become one shared bucket for the
+  // whole internet — see `lib/http/client-ip.ts` for the full reasoning.
+  app.addHook('onRequest', async (request) => {
+    applyClientIp(request);
   });
 
   // Permissions-Policy is not one of helmet's defaults. The API needs none of

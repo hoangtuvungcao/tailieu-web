@@ -26,7 +26,7 @@ async function main(): Promise<void> {
     app.log.warn({ err: error }, 'storage provisioning incomplete — continuing');
   }
 
-  await app.listen({ port: env.API_PORT, host: '0.0.0.0' });
+  await app.listen({ port: env.API_PORT, host: env.API_HOST });
 
   app.log.info(
     { port: env.API_PORT, env: env.NODE_ENV, publicUrl: env.API_PUBLIC_URL },

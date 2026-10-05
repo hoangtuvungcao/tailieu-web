@@ -215,6 +215,13 @@ Sửa `.env` cho Windows:
 NODE_ENV=production
 API_PUBLIC_URL=https://tailieu.5125121.com
 
+# Chỉ loopback. Tunnel chạy cùng máy nên vẫn vào được, mà cả mạng LAN thì không.
+# Đổi thành 0.0.0.0 là mở API cho LAN — xem giải thích ở TRUST_PROXY bên dưới.
+API_HOST=127.0.0.1
+# API nằm sau tunnel, nên Fastify nên biết điều đó (log, request.protocol).
+# Biến này KHÔNG điều khiển địa chỉ dùng cho giới hạn tần suất.
+TRUST_PROXY=true
+
 DATABASE_URL=postgres://tailieu:<mật-khẩu>@127.0.0.1:5432/tailieu
 REDIS_URL=redis://:<mật-khẩu-memurai>@127.0.0.1:6379
 

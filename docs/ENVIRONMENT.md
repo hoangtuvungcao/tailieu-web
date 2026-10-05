@@ -74,13 +74,53 @@ Cloudflare cắt ở giới hạn subrequest.
 
 Sai giá trị cho ra `SignatureDoesNotMatch` — một lỗi không nói gì về nguyên nhân.
 
+### `API_HOST` — mặc định `127.0.0.1`
+
+Giao diện để API lắng nghe. **Chỉ loopback, và đây là yêu cầu bảo mật chứ không
+phải khẩu vị.** Cloudflare Tunnel chạy trên cùng máy nên nó kết nối được qua
+loopback; đổi thành `0.0.0.0` là mở API cho cả mạng LAN, và khi đó bất kỳ máy nào
+trong mạng cũng **tự khai được địa chỉ IP của mình** — xem mục `TRUST_PROXY` ngay
+dưới.
+
+Chỉ đổi khi bạn thật sự có một proxy khác trên máy khác, và đã chặn tường lửa.
+
 ### `TRUST_PROXY`
 
 `false` mặc định. Đặt `true` **chỉ khi** API nằm sau Cloudflare Tunnel.
 
-- `false` sau tunnel → giới hạn tần suất khoá theo địa chỉ của tunnel, mọi người
-  dùng chung một hạn mức.
-- `true` khi **không** có proxy → ai cũng giả được IP và vượt giới hạn.
+> **Biến này KHÔNG điều khiển địa chỉ IP dùng cho giới hạn tần suất.** Nó chỉ ảnh
+> hưởng tới log của Fastify và `request.protocol`. Đừng nhầm hai thứ này — bật
+> `true` để "sửa giới hạn tần suất" là hiểu sai, và bật nó khi API **không** nằm
+> sau proxy là mở một lỗ hổng thật.
+
+Lý do: Fastify với `trustProxy: true` tin `X-Forwarded-For` từ **bất kỳ** peer
+nào. Ai kết nối được tới tiến trình này cũng gửi được header tự chọn, và như vậy
+tự chọn luôn "hạn mức" của mình.
+
+Địa chỉ thật được phân giải ở [`backend/src/lib/http/client-ip.ts`](../backend/src/lib/http/client-ip.ts),
+và chỉ tin header **khi kết nối đến từ loopback** — tức là từ tunnel trên chính
+máy đó. Đó là lý do `API_HOST` phải là `127.0.0.1`: hai thiết lập này chỉ đúng khi
+đi cùng nhau.
+
+Chuỗi đi của một request:
+
+```
+trình duyệt → Cloudflare Pages → Pages Function → Tunnel → 127.0.0.1:4000
+                                      │
+                                      └─ đọc CF-Connecting-IP (Cloudflare edge ghi,
+                                         ghi đè giá trị người dùng gửi),
+                                         XOÁ X-Forwarded-For của người dùng,
+                                         rồi đặt lại X-Forwarded-For = CF-Connecting-IP
+```
+
+Nên `X-Forwarded-For` đến nơi đã đúng. Thứ còn thiếu trước đây là **không ai đọc
+nó**: `trustProxy` mặc định tắt nên Fastify bỏ qua và luôn báo `127.0.0.1`. Hệ quả
+không có thông báo lỗi nào: mọi người dùng chung một hạn mức (300 request/phút cho
+cả trường), và `sessions.ip_address` cùng nhật ký kiểm toán ghi cùng một địa chỉ —
+khiến "thu hồi thiết bị kia" và "việc này đến từ đâu" không trả lời được.
+
+Cách kiểm chứng trên máy chủ thật nằm ở
+[SETUP_WINDOWS_PAGES.md](SETUP_WINDOWS_PAGES.md) phần "Kiểm chứng chuỗi địa chỉ".
 
 ### `MAIL_DRIVER`
 
