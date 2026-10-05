@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, apiWithMeta } from './api-client';
+import { useSessionSettled } from './auth';
 
 /**
  * Query hooks.
@@ -142,10 +143,15 @@ export function useDocuments(filters: DocumentFilters) {
 }
 
 export function useDocument(id: string | undefined) {
+  const settled = useSessionSettled();
   return useQuery({
     queryKey: ['document', id],
     queryFn: () => api.get<DocumentSummary>(`/documents/${id}`),
-    enabled: Boolean(id),
+    // `settled` as well as `id`, because a document that is `internal` or
+    // `private` answers 404 to an anonymous caller — see `useSessionSettled`.
+    // Without it a shared link to a document that needs an account renders
+    // "not found" on the first load and works after a reload.
+    enabled: Boolean(id) && settled,
   });
 }
 

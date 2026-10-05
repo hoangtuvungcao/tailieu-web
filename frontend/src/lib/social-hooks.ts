@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, apiWithMeta } from './api-client';
+import { useSessionSettled } from './auth';
 
 /**
  * Social data hooks.
@@ -139,13 +140,16 @@ export function useSetLike() {
 }
 
 export function usePost(postId: string | undefined) {
+  const settled = useSessionSettled();
   return useQuery({
     queryKey: ['social', 'post', postId],
     queryFn: () => api.get<Post>(`/posts/${postId}`),
     // No id means the route has not resolved yet, not a missing post. Fetching
     // `/posts/undefined` would 400 and render an error for a page that is
-    // about to load correctly.
-    enabled: Boolean(postId),
+    // about to load correctly. `settled` covers the other half: a post that is
+    // not public answers 404 to an anonymous caller, so asking before the
+    // session is restored shows "not found" for a post that is right there.
+    enabled: Boolean(postId) && settled,
   });
 }
 
@@ -454,6 +458,7 @@ export function useMyCollections(
 }
 
 export function useCollection(collectionId: string | undefined, page = 1) {
+  const settled = useSessionSettled();
   return useQuery({
     queryKey: ['social', 'collection', collectionId, page],
     queryFn: async () => {
@@ -463,7 +468,10 @@ export function useCollection(collectionId: string | undefined, page = 1) {
       return { collection: data, meta: meta as unknown as PaginatedMeta };
     },
     // No id means the route has not resolved yet, not a missing collection.
-    enabled: Boolean(collectionId),
+    // `settled` because a private collection answers 404 to an anonymous
+    // caller, which is indistinguishable from "deleted" — see
+    // `useSessionSettled`.
+    enabled: Boolean(collectionId) && settled,
   });
 }
 
@@ -608,11 +616,15 @@ export interface PublicProfile {
 }
 
 export function useProfile(userId: string | undefined) {
+  const settled = useSessionSettled();
   return useQuery({
     queryKey: ['social', 'profile', userId],
     queryFn: () => api.get<PublicProfile>(`/users/${userId}`),
     // No id means the route has not resolved yet, not a missing profile.
-    enabled: Boolean(userId),
+    // `settled` for the same reason as the other detail hooks: a profile that
+    // is not visible to anonymous callers answers 404, and a 404 is not
+    // retried, so asking too early turns a working link into a dead end.
+    enabled: Boolean(userId) && settled,
   });
 }
 

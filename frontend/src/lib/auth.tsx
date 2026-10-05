@@ -215,3 +215,23 @@ export function useAuth(): AuthContextValue {
   }
   return context;
 }
+
+/**
+ * Whether the session bootstrap has finished, one way or the other.
+ *
+ * A query for a resource that is not public must wait for this before it fires.
+ * The access token lives in memory, so a page load starts without one, and a
+ * request sent in that window arrives anonymous. The API answers 404 for a
+ * resource the caller may not see — deliberately, so a 404 cannot be used to
+ * probe what exists — so the client cannot tell "no such document" from "not
+ * signed in yet" and does not retry a 4xx. The result is that a shared link to
+ * a document that needs an account renders "Không tìm thấy tài liệu" on the
+ * first load and works on the next, which is the worst possible shape for a bug.
+ *
+ * Not `isAuthenticated`: a public document must still load for a visitor who is
+ * not signed in. This waits for the *question* to be answerable, not for the
+ * answer to be yes.
+ */
+export function useSessionSettled(): boolean {
+  return !useAuth().isLoading;
+}
