@@ -195,7 +195,7 @@ Biến môi trường bắt buộc cho Pages: `API_ORIGIN` (hostname tunnel).
 |---|---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Quyết định thiết kế, đánh đổi, vì sao | ✅ |
 | [DATABASE.md](docs/DATABASE.md) | Lược đồ, chỉ mục, trigger, soft delete | ✅ |
-| [API.md](docs/API.md) | 70 endpoint, quy ước chung | ✅ |
+| [API.md](docs/API.md) | Toàn bộ 124 endpoint, quy ước chung | ✅ |
 | [SECURITY.md](docs/SECURITY.md) | Mô hình bảo mật và các quyết định | ✅ |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Triển khai, sao lưu, xử lý sự cố | ✅ |
 | [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Quy ước mã nguồn, test, commit | ✅ |

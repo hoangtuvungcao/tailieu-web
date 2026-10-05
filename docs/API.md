@@ -121,195 +121,39 @@ Tất cả endpoint nằm dưới `/api/v1/`, trừ health check ở `/api/healt
 
 ---
 
-Tổng cộng **70 endpoint**.
+## Admin
 
+Mỗi endpoint dưới đây đòi một quyền cụ thể, không phải "là quản trị viên". Giữ
+`analytics.read` cho phép xem dashboard và không gì khác. Quyền được kiểm tra ở
+đây; việc giao diện ẩn một mục menu chỉ là hình thức.
 
+| Method | Path | Xác thực |
+|---|---|---|
+| GET | `/api/v1/admin/stats` | `analytics.read` |
+| GET | `/api/v1/admin/stats/timeseries` | `analytics.read` |
+| GET | `/api/v1/admin/users` | `users.read` |
+| GET | `/api/v1/admin/users/:id` | `users.read` |
+| PATCH | `/api/v1/admin/users/:id` | `users.write` |
+| POST | `/api/v1/admin/users/:id/roles` | `users.change_role` |
+| DELETE | `/api/v1/admin/users/:id/roles/:roleId` | `users.change_role` |
+| POST | `/api/v1/admin/users/:id/force-logout` | `users.force_logout` |
+| GET | `/api/v1/admin/users/:id/sessions` | `users.read_sessions` |
+| DELETE | `/api/v1/admin/users/:id/sessions/:sessionId` | `users.force_logout` |
+| GET | `/api/v1/admin/roles` | `roles.manage` |
+| GET | `/api/v1/admin/audit-logs` | `audit.read` |
+| GET | `/api/v1/admin/storage` | `storage.manage` |
+| GET | `/api/v1/admin/reports` | `reports.read` |
+| POST | `/api/v1/admin/reports/:id/resolve` | `reports.resolve` |
+| GET | `/api/v1/admin/settings` | `settings.manage` |
+| PATCH | `/api/v1/admin/settings` | `settings.manage` |
 
-### Phân trang
+Thao tác ghi bị giới hạn **60 lần/giờ cho mỗi người dùng** — một quản trị viên bấm
+qua các màn hình sẽ không bao giờ đụng trần, còn một vòng lặp cấp quyền tự động
+thì có.
 
-Danh sách nhận `?page=` (mặc định 1) và `?limit=` (mặc định 20, **tối đa 100**).
-Vượt giới hạn trả `422` thay vì âm thầm cắt bớt.
-
-Số lượng nằm trong `meta`:
-
-```json
-{ "page": 2, "limit": 20, "total": 37, "totalPages": 2, "hasNext": false, "hasPrev": true }
-```
-
-### Mã lỗi thường gặp
-
-| HTTP | Ý nghĩa |
-|---|---|
-| 400 | Yêu cầu không hợp lệ |
-| 401 | Chưa xác thực, hoặc token hết hạn |
-| 403 | Đã xác thực nhưng thiếu quyền |
-| 404 | Không tồn tại **hoặc** không có quyền xem |
-| 409 | Xung đột (trùng mã, đã kiểm duyệt) |
-| 413 | Tệp quá lớn |
-| 415 | Định dạng tệp không được hỗ trợ |
-| 422 | Dữ liệu không khớp lược đồ — có chi tiết theo từng trường |
-| 429 | Vượt giới hạn tần suất |
-| 503 | Dịch vụ phụ thuộc không khả dụng |
-
-> **404 chứ không phải 403** khi tài nguyên tồn tại nhưng người dùng không được
-> xem. Trả 403 sẽ xác nhận tài nguyên đó tồn tại — bản thân điều đó đã là rò rỉ
-> thông tin.
-
-### Lỗi kiểm tra dữ liệu
-
-`422` kèm chi tiết theo từng trường để giao diện đánh dấu đúng ô nhập liệu:
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_FAILED",
-    "message": "The request body is not valid.",
-    "details": { "fields": { "password": ["Mật khẩu phải có ít nhất 10 ký tự."] } }
-  }
-}
-```
-
-### Tải lên theo phần
-
-Tải tệp lớn dùng ba bước (bắt buộc vì Cloudflare giới hạn 100MB mỗi request):
-
-1. `POST /api/v1/uploads` — khai báo tên, kích thước, loại → nhận `uploadId`, `chunkSize`, `totalChunks`
-2. `PUT /api/v1/uploads/:id/chunks/:index` — thân là **nhị phân thô** (`application/octet-stream`), không phải multipart
-3. `POST /api/v1/uploads/:id/complete` — ghép, kiểm tra, khử trùng lặp
-
-`GET /api/v1/uploads/:id` trả danh sách phần đã nhận, cho phép **tiếp tục** sau khi
-mất kết nối mà không phải gửi lại từ đầu.
-
-### Về cột "Xác thực"
-
-Cột này được sinh tự động từ khai báo route:
-
-- **Công khai** — không cần đăng nhập
-- **Tùy chọn** — không bắt buộc đăng nhập, nhưng người đã đăng nhập **thấy nhiều
-  hơn** (tài liệu `internal`, tài liệu của chính họ). Đây là khác biệt quan trọng,
-  không phải chi tiết hình thức.
-- **Đăng nhập** — bắt buộc có token hợp lệ
-- **Đăng nhập + `quyền`** — bắt buộc có token **và** quyền tương ứng
-
-> Cột này chỉ mang tính tham khảo. **Mã nguồn route là nguồn sự thật** — đặc biệt
-> khi có thay đổi, hãy đọc `backend/src/modules/*/*.route.ts`.
-
-### Xem trước
-
-`GET /api/v1/documents/:id/preview` trả về mô tả, kèm URL có chữ ký **nếu xem trước
-được ngay**. Khác với `download`: tải xuống luôn tạo ra tệp, còn xem trước có thể
-hợp lệ mà không có gì để hiển thị.
-
-```json
-{
-  "kind": "office",
-  "inline": true,
-  "conversion": "ready",
-  "url": "https://...",
-  "expiresInSeconds": 120,
-  "reason": null
-}
-```
-
-`kind` là một trong `pdf`, `image`, `text`, `office`, `none`.
-`conversion` là `not_needed`, `pending`, `ready`, `failed`, hoặc `unsupported`.
-
----
-
-Tổng cộng **70 endpoint**.
-
-## Quy ước chung
-
-### Phân trang
-
-Danh sách nhận `?page=` (mặc định 1) và `?limit=` (mặc định 20, **tối đa 100**).
-Vượt giới hạn trả `422` thay vì âm thầm cắt bớt.
-
-Số lượng nằm trong `meta`:
-
-```json
-{ "page": 2, "limit": 20, "total": 37, "totalPages": 2, "hasNext": false, "hasPrev": true }
-```
-
-### Mã lỗi thường gặp
-
-| HTTP | Ý nghĩa |
-|---|---|
-| 400 | Yêu cầu không hợp lệ |
-| 401 | Chưa xác thực, hoặc token hết hạn |
-| 403 | Đã xác thực nhưng thiếu quyền |
-| 404 | Không tồn tại **hoặc** không có quyền xem |
-| 409 | Xung đột (trùng mã, đã kiểm duyệt) |
-| 413 | Tệp quá lớn |
-| 415 | Định dạng tệp không được hỗ trợ |
-| 422 | Dữ liệu không khớp lược đồ — có chi tiết theo từng trường |
-| 429 | Vượt giới hạn tần suất |
-| 503 | Dịch vụ phụ thuộc không khả dụng |
-
-> **404 chứ không phải 403** khi tài nguyên tồn tại nhưng người dùng không được
-> xem. Trả 403 sẽ xác nhận tài nguyên đó tồn tại — bản thân điều đó đã là rò rỉ
-> thông tin.
-
-### Lỗi kiểm tra dữ liệu
-
-`422` kèm chi tiết theo từng trường để giao diện đánh dấu đúng ô nhập liệu:
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_FAILED",
-    "message": "The request body is not valid.",
-    "details": { "fields": { "password": ["Mật khẩu phải có ít nhất 10 ký tự."] } }
-  }
-}
-```
-
-### Tải lên theo phần
-
-Tải tệp lớn dùng ba bước (bắt buộc vì Cloudflare giới hạn 100MB mỗi request):
-
-1. `POST /api/v1/uploads` — khai báo tên, kích thước, loại → nhận `uploadId`, `chunkSize`, `totalChunks`
-2. `PUT /api/v1/uploads/:id/chunks/:index` — thân là **nhị phân thô** (`application/octet-stream`), không phải multipart
-3. `POST /api/v1/uploads/:id/complete` — ghép, kiểm tra, khử trùng lặp
-
-`GET /api/v1/uploads/:id` trả danh sách phần đã nhận, cho phép **tiếp tục** sau khi
-mất kết nối mà không phải gửi lại từ đầu.
-
-### Về cột "Xác thực"
-
-Cột này được sinh tự động từ khai báo route:
-
-- **Công khai** — không cần đăng nhập
-- **Tùy chọn** — không bắt buộc đăng nhập, nhưng người đã đăng nhập **thấy nhiều
-  hơn** (tài liệu `internal`, tài liệu của chính họ). Đây là khác biệt quan trọng,
-  không phải chi tiết hình thức.
-- **Đăng nhập** — bắt buộc có token hợp lệ
-- **Đăng nhập + `quyền`** — bắt buộc có token **và** quyền tương ứng
-
-> Cột này chỉ mang tính tham khảo. **Mã nguồn route là nguồn sự thật** — đặc biệt
-> khi có thay đổi, hãy đọc `backend/src/modules/*/*.route.ts`.
-
-### Xem trước
-
-`GET /api/v1/documents/:id/preview` trả về mô tả, kèm URL có chữ ký **nếu xem trước
-được ngay**. Khác với `download`: tải xuống luôn tạo ra tệp, còn xem trước có thể
-hợp lệ mà không có gì để hiển thị.
-
-```json
-{
-  "kind": "office",
-  "inline": true,
-  "conversion": "ready",
-  "url": "https://...",
-  "expiresInSeconds": 120,
-  "reason": null
-}
-```
-
-`kind` là một trong `pdf`, `image`, `text`, `office`, `none`.
-`conversion` là `not_needed`, `pending`, `ready`, `failed`, hoặc `unsupported`.
+> `PATCH /admin/settings` là chỗ đổi `maintenance_mode`, `read_only_mode` và
+> `registration_enabled`. Bật `read_only_mode` **trước khi sao lưu** database:
+> `pg_dump` chạy trong lúc có người đang ghi sẽ cho ra bản sao không nhất quán.
 
 ---
 
@@ -478,3 +322,109 @@ Bản thân bình luận đã xoá không trả về hành động nào và khô
 được đưa lên đầu theo đúng thứ tự gửi, **phần còn lại giữ nguyên vị trí tương
 đối** — nên một danh sách thiếu (do phân trang) vẫn cho kết quả xác định. Id
 không thuộc bộ sưu tập này bị bỏ qua, không báo lỗi.
+
+---
+
+Tổng cộng **124 endpoint**.
+
+Con số này là **toàn bộ** endpoint máy chủ đăng ký, không phải một phần: không
+tính `HEAD`/`OPTIONS` mà Fastify tự thêm, và gộp những đường dẫn chỉ khác nhau ở
+dấu `/` cuối (ví dụ `/api/v1/posts` và `/api/v1/posts/`).
+
+---
+
+## Quy ước chung
+
+### Phân trang
+
+Danh sách nhận `?page=` (mặc định 1) và `?limit=` (mặc định 20, **tối đa 100**).
+Vượt giới hạn trả `422` thay vì âm thầm cắt bớt.
+
+Số lượng nằm trong `meta`:
+
+```json
+{ "page": 2, "limit": 20, "total": 37, "totalPages": 2, "hasNext": false, "hasPrev": true }
+```
+
+### Mã lỗi thường gặp
+
+| HTTP | Ý nghĩa |
+|---|---|
+| 400 | Yêu cầu không hợp lệ |
+| 401 | Chưa xác thực, hoặc token hết hạn |
+| 403 | Đã xác thực nhưng thiếu quyền |
+| 404 | Không tồn tại **hoặc** không có quyền xem |
+| 409 | Xung đột (trùng mã, đã kiểm duyệt) |
+| 413 | Tệp quá lớn |
+| 415 | Định dạng tệp không được hỗ trợ |
+| 422 | Dữ liệu không khớp lược đồ — có chi tiết theo từng trường |
+| 429 | Vượt giới hạn tần suất |
+| 503 | Dịch vụ phụ thuộc không khả dụng |
+
+> **404 chứ không phải 403** khi tài nguyên tồn tại nhưng người dùng không được
+> xem. Trả 403 sẽ xác nhận tài nguyên đó tồn tại — bản thân điều đó đã là rò rỉ
+> thông tin.
+
+### Lỗi kiểm tra dữ liệu
+
+`422` kèm chi tiết theo từng trường để giao diện đánh dấu đúng ô nhập liệu:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "The request body is not valid.",
+    "details": { "fields": { "password": ["Mật khẩu phải có ít nhất 10 ký tự."] } }
+  }
+}
+```
+
+### Tải lên theo phần
+
+Tải tệp lớn dùng ba bước (bắt buộc vì Cloudflare giới hạn 100MB mỗi request):
+
+1. `POST /api/v1/uploads` — khai báo tên, kích thước, loại → nhận `uploadId`, `chunkSize`, `totalChunks`
+2. `PUT /api/v1/uploads/:id/chunks/:index` — thân là **nhị phân thô** (`application/octet-stream`), không phải multipart
+3. `POST /api/v1/uploads/:id/complete` — ghép, kiểm tra, khử trùng lặp
+
+`GET /api/v1/uploads/:id` trả danh sách phần đã nhận, cho phép **tiếp tục** sau khi
+mất kết nối mà không phải gửi lại từ đầu.
+
+### Về cột "Xác thực"
+
+Cột này được sinh tự động từ khai báo route:
+
+- **Công khai** — không cần đăng nhập
+- **Tùy chọn** — không bắt buộc đăng nhập, nhưng người đã đăng nhập **thấy nhiều
+  hơn** (tài liệu `internal`, tài liệu của chính họ). Đây là khác biệt quan trọng,
+  không phải chi tiết hình thức.
+- **Đăng nhập** — bắt buộc có token hợp lệ
+- **Đăng nhập + `quyền`** — bắt buộc có token **và** quyền tương ứng
+
+> Cột này chỉ mang tính tham khảo. **Mã nguồn route là nguồn sự thật** — đặc biệt
+> khi có thay đổi, hãy đọc `backend/src/modules/*/*.route.ts`.
+
+### Xem trước
+
+`GET /api/v1/documents/:id/preview` trả về mô tả, kèm URL có chữ ký **nếu xem trước
+được ngay**. Khác với `download`: tải xuống luôn tạo ra tệp, còn xem trước có thể
+hợp lệ mà không có gì để hiển thị.
+
+```json
+{
+  "kind": "office",
+  "inline": true,
+  "conversion": "ready",
+  "url": "https://...",
+  "expiresInSeconds": 120,
+  "reason": null
+}
+```
+
+`kind` là một trong `pdf`, `image`, `text`, `office`, `none`.
+`conversion` là `not_needed`, `pending`, `ready`, `failed`, hoặc `unsupported`.
+
+---
+
+
