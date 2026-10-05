@@ -34,7 +34,10 @@ export interface CurrentUser {
   email: string;
   displayName: string;
   fullName: string | null;
+  username: string | null;
+  bio: string | null;
   avatarUrl: string | null;
+  coverUrl: string | null;
   emailVerified: boolean;
   roles: string[];
   primaryFacultyId: string | null;
@@ -57,6 +60,15 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   signOutEverywhere: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  /**
+   * Replace the cached account with one a mutation just returned.
+   *
+   * The current user lives in context, not in the React Query cache, so a
+   * profile edit cannot invalidate its way to a fresh value — it would need a
+   * second round trip to `/auth/me` to relearn what the write already
+   * responded with. This is the seam that lets the write be the source.
+   */
+  applyUser: (user: CurrentUser) => void;
   /** Convenience for UI gating. Cosmetic only — the server re-checks. */
   hasRole: (role: string) => boolean;
 }
@@ -175,6 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user],
   );
 
+  const applyUser = useCallback((next: CurrentUser) => setUser(next), []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -185,9 +199,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       signOutEverywhere,
       refreshUser,
+      applyUser,
       hasRole,
     }),
-    [user, isLoading, signIn, signUp, signOut, signOutEverywhere, refreshUser, hasRole],
+    [user, isLoading, signIn, signUp, signOut, signOutEverywhere, refreshUser, applyUser, hasRole],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

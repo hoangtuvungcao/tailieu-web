@@ -16,6 +16,7 @@ import {
 } from '@/components/ui';
 import { ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
+import { useSeo } from '@/lib/seo';
 import {
   useComments,
   useCreateComment,
@@ -49,12 +50,47 @@ const VISIBILITY_LABELS: Record<string, string> = {
   private: 'Riêng tư',
 };
 
+/**
+ * The first line of a post, trimmed to a length that fits a search result.
+ *
+ * A post has no summary field, and its body may be a paragraph of prose or a
+ * screenshot's caption. The first line is the closest thing to a title it has,
+ * and cutting at a newline first means a multi-line post is not truncated
+ * mid-sentence when it did not need to be.
+ */
+function firstLine(body: string, max = 80): string {
+  const line = body.split('\n').find((entry) => entry.trim() !== '') ?? body;
+  const trimmed = line.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1).trimEnd()}…` : trimmed;
+}
+
 export function PostDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const post = usePost(id);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // A post's body is free text, so only its first line becomes the description
+  // — a preview card wants a sentence, and the API returns the whole post.
+  const postData = post.data;
+  useSeo({
+    title: postData
+      ? `${postData.title ?? firstLine(postData.body)} — TAILIEU TTN`
+      : 'Bài đăng — TAILIEU TTN',
+    description: postData ? firstLine(postData.body, 160) : undefined,
+    type: 'article',
+    jsonLd: postData
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'DiscussionForumPosting',
+          headline: postData.title ?? firstLine(postData.body),
+          text: firstLine(postData.body, 300),
+          datePublished: postData.createdAt,
+          author: { '@type': 'Person', name: postData.author.displayName },
+        }
+      : null,
+  });
 
   if (post.isLoading) {
     return (

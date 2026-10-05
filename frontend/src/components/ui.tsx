@@ -25,7 +25,15 @@ import { cn } from '@/lib/utils';
 // Button
 // =============================================================================
 
-const buttonVariants = cva(
+/**
+ * Exported so a `<label>` can be styled as a button.
+ *
+ * A file input must stay focusable for keyboard and screen-reader users, which
+ * rules out `display:none` — so the input keeps `sr-only` and a `<label>` acts
+ * as the visible control. A `<label>` cannot be a `<button>`, which would nest
+ * interactive elements, so it borrows the button's classes instead.
+ */
+export const buttonVariants = cva(
   'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ring)]',
   {
     variants: {

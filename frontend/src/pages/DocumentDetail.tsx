@@ -15,6 +15,7 @@ import { Badge, Button, Card, CardContent, ErrorState, Skeleton, Spinner } from 
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
 import { useDeleteDocument, useDocument, useDownloadDocument, useRateDocument } from '@/lib/hooks';
+import { useSeo } from '@/lib/seo';
 import {
   DOCUMENT_STATUS_LABELS,
   FILE_KIND_LABELS,
@@ -47,8 +48,41 @@ export function DocumentDetailPage() {
   const remove = useDeleteDocument();
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewReason, setPreviewReason] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // A shared document link is the one URL on this site that people paste into
+  // chat, so its preview matters more here than anywhere else: the title, the
+  // description the uploader wrote, and `article` so the card renders as
+  // content. The values are absent while the request is in flight, and the
+  // route default covers that window.
+  useSeo({
+    title: document ? `${document.title} — TAILIEU TTN` : 'Tài liệu — TAILIEU TTN',
+    description: document?.description ?? undefined,
+    type: 'article',
+    jsonLd: document
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'LearningResource',
+          name: document.title,
+          description: document.description ?? undefined,
+          inLanguage: document.language,
+          datePublished: document.publishedAt ?? document.createdAt,
+          educationalLevel: document.taxonomy.academicYear?.name ?? undefined,
+          about: document.taxonomy.subject?.name ?? undefined,
+          learningResourceType: document.taxonomy.documentType?.name ?? undefined,
+          provider: { '@type': 'CollegeOrUniversity', name: 'Đại học Tây Nguyên' },
+          // Interaction counts, not ratings: `ratingAverage` is null until
+          // somebody rates, and emitting `aggregateRating` with no ratings is
+          // the kind of markup that gets a site penalised.
+          interactionStatistic: [
+            { '@type': 'InteractionCounter', interactionType: 'https://schema.org/DownloadAction', userInteractionCount: document.stats.downloads },
+            { '@type': 'InteractionCounter', interactionType: 'https://schema.org/LikeAction', userInteractionCount: document.stats.likes },
+          ],
+        }
+      : null,
+  });
 
   if (isLoading) {
     return (
@@ -81,10 +115,25 @@ export function DocumentDetailPage() {
     if (!id || !primaryFile) return;
     setPreviewLoading(true);
     try {
-      const result = await api.get<{ url: string }>(
-        `/documents/${id}/download?fileId=${primaryFile.id}`,
+      // The PREVIEW endpoint, not download.
+      //
+      // The two mint the same token over the same bytes and differ in exactly
+      // one thing: `mode`, which becomes `Content-Disposition`. Download sends
+      // `attachment`, and a browser handed an attachment saves the file instead
+      // of rendering it — so an `<object>` given a download URL displays
+      // nothing. That is what this did, which is why the preview pane stayed
+      // empty for the format the preview pane exists for.
+      const result = await api.get<{ url: string | null; reason: string | null }>(
+        `/documents/${id}/preview?fileId=${primaryFile.id}`,
       );
-      setPreviewUrl(result.url);
+      if (result.url) {
+        setPreviewUrl(result.url);
+      } else {
+        // The server knows why there is nothing to show — still converting, or
+        // a format with no viewer. It says so in Vietnamese; repeating that
+        // beats inventing a second explanation here that can drift from it.
+        setPreviewReason(result.reason);
+      }
     } catch {
       // Leave the preview closed; the download button is still available.
     } finally {
@@ -181,14 +230,15 @@ export function DocumentDetailPage() {
                 <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
                   <FileText className="h-10 w-10 text-[var(--color-muted-foreground)]" aria-hidden />
                   <p className="text-sm text-[var(--color-muted-foreground)]">
-                    {canPreviewInline
-                      ? 'Nhấn để xem trước tài liệu ngay trong trình duyệt.'
-                      : primaryFile?.previewStatus === 'queued' ||
-                          primaryFile?.previewStatus === 'processing'
-                        ? 'Tài liệu đang được xử lý để xem trước. Bạn có thể tải xuống ngay bây giờ.'
-                        : 'Định dạng này cần tải xuống để xem. Vui lòng tải tệp về máy.'}
+                    {previewReason ??
+                      (canPreviewInline
+                        ? 'Nhấn để xem trước tài liệu ngay trong trình duyệt.'
+                        : primaryFile?.previewStatus === 'queued' ||
+                            primaryFile?.previewStatus === 'processing'
+                          ? 'Tài liệu đang được xử lý để xem trước. Bạn có thể tải xuống ngay bây giờ.'
+                          : 'Định dạng này cần tải xuống để xem. Vui lòng tải tệp về máy.')}
                   </p>
-                  {canPreviewInline ? (
+                  {canPreviewInline && !previewReason ? (
                     <Button onClick={() => void openPreview()} isLoading={previewLoading}>
                       Xem trước
                     </Button>

@@ -5,28 +5,90 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0f5132" />
 
+    <!--
+      The defaults, which the SPA overrides per route once it boots (see
+      `src/lib/seo.ts`). They are not placeholders: this is what a crawler that
+      does not run JavaScript, and every social scraper, actually reads. Which
+      is why they are complete rather than minimal.
+    -->
     <title>TAILIEU TTN — Kho tri thức Đại học Tây Nguyên</title>
     <meta
       name="description"
       content="Nền tảng chia sẻ tài liệu học tập, đề thi, bài giảng và kết nối cộng đồng học thuật Đại học Tây Nguyên."
     />
+    <link rel="canonical" href="https://tailieu.5125121.com/" />
 
-    <!-- OpenGraph. Absolute URLs are required: a relative og:image is ignored
-         by every social crawler, so shared links render without a preview. -->
+    <!-- Absolute URLs are required: a relative og:image is ignored by every
+         social crawler, so shared links would render without a preview. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="TAILIEU TTN" />
+    <meta property="og:url" content="https://tailieu.5125121.com/" />
     <meta property="og:title" content="TAILIEU TTN — Kho tri thức Đại học Tây Nguyên" />
     <meta
       property="og:description"
       content="Chia sẻ • Khám phá • Học tập • Kết nối. Tài liệu, đề thi và bài giảng dành cho sinh viên Đại học Tây Nguyên."
     />
     <meta property="og:locale" content="vi_VN" />
+    <meta property="og:image" content="https://tailieu.5125121.com/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="TAILIEU TTN — Kho tri thức Đại học Tây Nguyên"
+    />
 
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="TAILIEU TTN — Kho tri thức Đại học Tây Nguyên" />
+    <meta
+      name="twitter:description"
+      content="Tài liệu, đề thi và bài giảng dành cho sinh viên Đại học Tây Nguyên."
+    />
+    <meta name="twitter:image" content="https://tailieu.5125121.com/og-image.png" />
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Structured data. `WebSite` with a SearchAction is what lets Google
+         offer a search box for the site directly in results; without it the
+         site is eligible for nothing but a plain blue link. The organization
+         node is declared once here rather than per page, because it is the
+         same entity on every page and repeating it invites contradictions. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://tailieu.5125121.com/#website",
+            "url": "https://tailieu.5125121.com/",
+            "name": "TAILIEU TTN",
+            "alternateName": "Tài liệu TTN",
+            "description": "Kho tài liệu học thuật và cộng đồng tri thức của Trường Đại học Tây Nguyên.",
+            "inLanguage": "vi",
+            "publisher": { "@id": "https://tailieu.5125121.com/#organization" },
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://tailieu.5125121.com/documents?q={search_term_string}"
+              },
+              "query-input": "required name=search_term_string"
+            }
+          },
+          {
+            "@type": "CollegeOrUniversity",
+            "@id": "https://tailieu.5125121.com/#organization",
+            "name": "Trường Đại học Tây Nguyên",
+            "alternateName": "Tay Nguyen University",
+            "url": "https://tailieu.5125121.com/",
+            "logo": "https://tailieu.5125121.com/icon-512.png"
+          }
+        ]
+      }
+    </script>
 
     <!-- Vietnamese text needs a font with full diacritic coverage. System
          fonts are used rather than a webfont so the first paint is not blocked

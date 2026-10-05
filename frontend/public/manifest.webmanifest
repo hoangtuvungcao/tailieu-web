@@ -1,0 +1,54 @@
+{
+  "name": "Tài liệu TTN — Kho tài liệu Đại học Tây Nguyên",
+  "short_name": "Tài liệu TTN",
+  "description": "Kho tài liệu học thuật và cộng đồng tri thức của Trường Đại học Tây Nguyên: tìm kiếm, chia sẻ, bình luận và lưu trữ tài liệu học tập.",
+  "lang": "vi",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#0f5132",
+  "categories": ["education", "productivity", "books"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Tìm tài liệu",
+      "short_name": "Tài liệu",
+      "url": "/documents",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Cộng đồng",
+      "short_name": "Cộng đồng",
+      "url": "/community",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

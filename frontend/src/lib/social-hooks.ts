@@ -266,7 +266,17 @@ export function useSetCommentLike() {
   });
 }
 
-export function useUnreadCount() {
+/**
+ * The unread badge count.
+ *
+ * `enabled` is required rather than optional, for the same reason `useForYou`
+ * requires it: the endpoint answers 401 without a session. The header renders
+ * the bell only when signed in, but "only render it" was not enough — the hook
+ * was called unconditionally and fired before the session was restored on a
+ * hard reload, so every reload of every page logged a 401 for a signed-in user.
+ * Gating the query is what actually stops the request.
+ */
+export function useUnreadCount(enabled: boolean) {
   return useQuery({
     queryKey: ['social', 'notifications', 'unread'],
     queryFn: () => api.get<{ unread: number }>('/notifications/unread-count'),
@@ -276,6 +286,7 @@ export function useUnreadCount() {
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     staleTime: 30_000,
+    enabled,
   });
 }
 

@@ -6,6 +6,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { AuthProvider } from './lib/auth';
 import { ApiError } from './lib/api-client';
+import { SeoProvider } from './lib/seo';
 import './styles.css';
 
 /**
@@ -65,9 +66,11 @@ createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <SeoProvider>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </SeoProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

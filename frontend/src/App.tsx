@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Moon,
   Search,
+  Settings,
   Sun,
   Upload,
   User as UserIcon,
@@ -16,6 +17,7 @@ import {
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 
+import { Logo, LogoMark } from '@/components/Logo';
 import { Badge, Button, Spinner } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
 import { useUnreadCount } from '@/lib/social-hooks';
@@ -28,6 +30,7 @@ import { LeaderboardPage } from '@/pages/Leaderboard';
 import { NotificationsPage } from '@/pages/Notifications';
 import { PostDetailPage } from '@/pages/PostDetail';
 import { ProfilePage } from '@/pages/Profile';
+import { ProfileSettingsPage } from '@/pages/ProfileSettings';
 import { DocumentDetailPage } from '@/pages/DocumentDetail';
 import { DocumentsPage } from '@/pages/Documents';
 import { HomePage } from '@/pages/Home';
@@ -175,7 +178,10 @@ function ThemeToggle() {
  */
 function NotificationBell() {
   const { isAuthenticated } = useAuth();
-  const { data } = useUnreadCount();
+  // Gate the query, do not merely hide its output. Returning null below stops
+  // the badge rendering but not the request, and the request is what logged a
+  // 401 on every hard reload — before the session had been restored.
+  const { data } = useUnreadCount(isAuthenticated);
   const count = data?.unread ?? 0;
 
   if (!isAuthenticated) return null;
@@ -206,20 +212,9 @@ function Header() {
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-background)]/85 backdrop-blur">
       <div className="container-page flex h-16 items-center gap-3 xl:gap-4">
         <Link to="/" className="flex shrink-0 items-center gap-2">
-          {/* A secondary mark, deliberately not the official university logo —
-              an invented symbol avoids misrepresenting an official emblem. */}
-          <span
-            aria-hidden
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-brand-700)] text-[var(--color-brand-50)]"
-          >
-            <BookOpen className="h-5 w-5" />
-          </span>
-          <span className="flex flex-col leading-none">
-            <span className="text-sm font-bold tracking-tight">TAILIEU TTN</span>
-            <span className="hidden text-[11px] text-[var(--color-muted-foreground)] sm:block">
-              Đại học Tây Nguyên
-            </span>
-          </span>
+          {/* The product's own mark, not the university's official emblem — an
+              invented symbol avoids misrepresenting an official crest. */}
+          <Logo />
         </Link>
 
         <nav
@@ -301,6 +296,18 @@ function Header() {
                     <Badge variant="gold">Quản trị</Badge>
                   </Link>
                 ) : null}
+                {/* `/settings/profile` is reachable from the profile page at
+                    every width. This is the shortcut for the people who edit
+                    their avatar often; it stays out of the phone header, where
+                    the row is tight and the profile is one tap away anyway. */}
+                <Link
+                  to="/settings/profile"
+                  aria-label="Chỉnh sửa hồ sơ"
+                  title="Chỉnh sửa hồ sơ"
+                  className="hidden text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] sm:block"
+                >
+                  <Settings className="h-4 w-4" aria-hidden />
+                </Link>
               </div>
               <Button
                 variant="ghost"
@@ -334,7 +341,10 @@ function Footer() {
   return (
     <footer className="mt-16 border-t border-[var(--color-border)] py-8">
       <div className="container-page flex flex-col gap-2 text-sm text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:justify-between">
-        <p>TAILIEU TTN — Kho tri thức cộng đồng Đại học Tây Nguyên</p>
+        <p className="flex items-center gap-2">
+          <LogoMark className="h-6 w-6" decorative />
+          <span>TAILIEU TTN — Kho tri thức cộng đồng Đại học Tây Nguyên</span>
+        </p>
         <p className="text-xs">
           Nền tảng không thay thế cho các nguồn tài liệu chính thức của nhà trường.
         </p>
@@ -511,6 +521,14 @@ export function App() {
         />
         <Route path="documents/:id" element={<DocumentDetailPage />} />
         <Route path="users/:id" element={<ProfilePage />} />
+        <Route
+          path="settings/profile"
+          element={
+            <RequireAuth>
+              <ProfileSettingsPage />
+            </RequireAuth>
+          }
+        />
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route

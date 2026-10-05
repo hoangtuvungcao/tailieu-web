@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Heart,
   MessageSquare,
+  Settings,
   ShieldCheck,
   Sparkles,
   Star,
@@ -20,6 +21,7 @@ import { FollowButton } from '@/components/FollowButton';
 import { Avatar, Button, Card, CardContent, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
+import { useSeo } from '@/lib/seo';
 import { useFollowers, useFollowing, usePosts, useProfile } from '@/lib/social-hooks';
 import { cn, formatDate } from '@/lib/utils';
 import { PostCard } from '@/pages/Community';
@@ -57,11 +59,53 @@ export function ProfilePage() {
   const followers = useFollowers(id, 1, tab === 'followers');
   const following = useFollowing(id, 1, tab === 'following');
 
+  // Called before the loading branch, because hooks cannot be conditional. The
+  // title falls back to the route default while the profile is in flight, which
+  // is also what a crawler that does not run JavaScript will see.
+  const profileUser = profile.data;
+  useSeo({
+    title: profileUser
+      ? `${profileUser.displayName}${profileUser.username ? ` (@${profileUser.username})` : ''} — TAILIEU TTN`
+      : 'Hồ sơ — TAILIEU TTN',
+    // The bio is the only prose a profile has, so it is the description when
+    // present rather than a generated sentence about the account.
+    description: profileUser?.bio ?? undefined,
+    type: 'profile',
+    // The avatar, not the cover: a link preview is rendered as a small square
+    // card, and a 3:1 banner cropped to a square is a picture of nothing.
+    image: profileUser?.avatarUrl ?? undefined,
+    imageAlt: profileUser ? `Ảnh đại diện của ${profileUser.displayName}` : undefined,
+    jsonLd: profileUser
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'ProfilePage',
+          dateCreated: profileUser.joinedAt,
+          mainEntity: {
+            '@type': 'Person',
+            name: profileUser.displayName,
+            alternateName: profileUser.username ?? undefined,
+            description: profileUser.bio ?? undefined,
+            image: profileUser.avatarUrl ?? undefined,
+            affiliation: profileUser.faculty?.name ?? undefined,
+          },
+        }
+      : null,
+  });
+
   if (profile.isLoading) {
     return (
       <div className="container-page py-8">
         <div className="mx-auto max-w-3xl space-y-4">
-          <Skeleton className="h-40 rounded-lg" />
+          {/* Shaped like the loaded page — cover, then the avatar block, then
+              the tabs — so nothing jumps when the data lands. */}
+          <Skeleton className="h-32 rounded-lg sm:h-44" />
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-24 w-24 shrink-0 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-32" />
+            </div>
+          </div>
           <Skeleton className="h-32 rounded-lg" />
         </div>
       </div>
@@ -123,57 +167,33 @@ export function ProfilePage() {
   return (
     <div className="container-page py-8">
       <div className="mx-auto max-w-3xl">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex flex-wrap items-start gap-4">
-              <Avatar name={user.displayName} src={user.avatarUrl} size="lg" />
+        {/* `overflow-hidden` so the cover's corners follow the card's radius
+            instead of squaring off against it. */}
+        <Card className="overflow-hidden">
+          {/* The cover sits full-bleed and the avatar overlaps its lower edge —
+              the arrangement every profile the audience already uses has, so
+              it needs no explanation. An account with no cover gets a brand
+              gradient rather than a grey box: unfinished should still look
+              deliberate. */}
+          <div
+            className={cn(
+              'relative h-32 w-full sm:h-44',
+              !user.coverUrl &&
+                'bg-gradient-to-br from-[var(--color-brand-700)] via-[var(--color-brand-600)] to-[var(--color-brand-500)]',
+            )}
+          >
+            {user.coverUrl ? (
+              <img src={user.coverUrl} alt="" className="h-full w-full object-cover" />
+            ) : null}
+          </div>
 
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl font-bold tracking-tight">{user.displayName}</h1>
-                {user.username ? (
-                  <p className="text-sm text-[var(--color-muted-foreground)]">@{user.username}</p>
-                ) : null}
-
-                {user.bio ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{user.bio}</p>
-                ) : null}
-
-                <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted-foreground)]">
-                  {affiliation.length > 0 ? <span>{affiliation.join(' · ')}</span> : null}
-                  <span className="inline-flex items-center gap-1">
-                    <CalendarDays className="h-3.5 w-3.5" aria-hidden />
-                    Tham gia {formatDate(user.joinedAt)}
-                  </span>
-                  {/* A penalised account can be below zero, so the wording says
-                      "uy tín" (standing) rather than framing it as a score that
-                      only ever goes up. */}
-                  <span className="inline-flex items-center gap-1 font-medium text-[var(--color-foreground)]">
-                    <Star className="h-3.5 w-3.5" aria-hidden />
-                    {user.reputation} uy tín
-                  </span>
-                </p>
-
-                {user.badges.length > 0 ? (
-                  <ul className="mt-3 flex flex-wrap gap-1.5">
-                    {user.badges.map((badge) => {
-                      const Icon = BADGE_ICONS[badge.icon ?? ''] ?? Award;
-                      return (
-                        <li key={badge.code}>
-                          <span
-                            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs"
-                            // The description is the criteria, which is the
-                            // only thing that explains why somebody has this.
-                            title={badge.description ?? badge.name}
-                          >
-                            <Icon className="h-3.5 w-3.5" aria-hidden />
-                            {badge.name}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
-              </div>
+          <CardContent className="p-6 pt-0">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <Avatar
+                name={user.displayName}
+                src={user.avatarUrl}
+                className="-mt-12 h-24 w-24 text-2xl ring-4 ring-[var(--color-card)] sm:-mt-14 sm:h-28 sm:w-28"
+              />
 
               {isOwnProfile ? (
                 /* Your own profile is where the phone's navigation runs out.
@@ -181,6 +201,12 @@ export function ProfilePage() {
                    that did not fit; the header's account button is visible at
                    every width and leads here. */
                 <div className="flex flex-wrap gap-2">
+                  <Link to="/settings/profile">
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Settings className="h-4 w-4" aria-hidden />
+                      Chỉnh sửa hồ sơ
+                    </Button>
+                  </Link>
                   <Link to="/collections">
                     <Button variant="outline" size="sm" className="gap-2">
                       <FolderOpen className="h-4 w-4" aria-hidden />
@@ -211,6 +237,53 @@ export function ProfilePage() {
               ) : (
                 <FollowButton userId={user.id} />
               )}
+            </div>
+
+            <div className="mt-4">
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{user.displayName}</h1>
+              {user.username ? (
+                <p className="text-sm text-[var(--color-muted-foreground)]">@{user.username}</p>
+              ) : null}
+
+              {user.bio ? (
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{user.bio}</p>
+              ) : null}
+
+              <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted-foreground)]">
+                {affiliation.length > 0 ? <span>{affiliation.join(' · ')}</span> : null}
+                <span className="inline-flex items-center gap-1">
+                  <CalendarDays className="h-3.5 w-3.5" aria-hidden />
+                  Tham gia {formatDate(user.joinedAt)}
+                </span>
+                {/* A penalised account can be below zero, so the wording says
+                    "uy tín" (standing) rather than framing it as a score that
+                    only ever goes up. */}
+                <span className="inline-flex items-center gap-1 font-medium text-[var(--color-foreground)]">
+                  <Star className="h-3.5 w-3.5" aria-hidden />
+                  {user.reputation} uy tín
+                </span>
+              </p>
+
+              {user.badges.length > 0 ? (
+                <ul className="mt-3 flex flex-wrap gap-1.5">
+                  {user.badges.map((badge) => {
+                    const Icon = BADGE_ICONS[badge.icon ?? ''] ?? Award;
+                    return (
+                      <li key={badge.code}>
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs"
+                          // The description is the criteria, which is the
+                          // only thing that explains why somebody has this.
+                          title={badge.description ?? badge.name}
+                        >
+                          <Icon className="h-3.5 w-3.5" aria-hidden />
+                          {badge.name}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
             </div>
 
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

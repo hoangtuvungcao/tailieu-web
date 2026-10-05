@@ -1,0 +1,31 @@
+# TAILIEU TTN — https://tailieu.5125121.com
+#
+# Everything here is public and worth indexing except the authenticated areas.
+# Those are disallowed not to hide them — the API enforces every permission
+# regardless of what a crawler does — but because an indexed page that renders
+# a sign-in form is a bad result for somebody searching for a document, and
+# because a crawler has no session to render them with anyway.
+
+User-agent: *
+Allow: /
+
+Disallow: /admin
+Disallow: /admin/
+Disallow: /settings
+Disallow: /settings/
+Disallow: /notifications
+Disallow: /bookmarks
+Disallow: /collections
+Disallow: /upload
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+
+# The API answers JSON, never a page. Crawling it wastes the tunnel's bandwidth
+# and it is the one surface where a misbehaving crawler could look like abuse.
+Disallow: /api/
+
+# A sitemap that a crawler can find without being told.
+Sitemap: https://tailieu.5125121.com/sitemap.xml

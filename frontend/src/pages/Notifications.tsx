@@ -102,7 +102,11 @@ export function NotificationsPage() {
   const query = useNotifications(page);
   // The true unread total, not a count of this page — the button must not
   // disappear because the unread rows happen to sit on an earlier page.
-  const unread = useUnreadCount();
+  //
+  // `true` because this page is behind `RequireAuth`: it does not render until
+  // a session exists. The gate still has to be passed rather than assumed — the
+  // header's own call site is the one where the answer is genuinely unknown.
+  const unread = useUnreadCount(true);
   const markAll = useMarkAllNotificationsRead();
 
   const notifications = query.data?.notifications ?? [];
