@@ -141,8 +141,8 @@ tailieu-web/
 | `npm run db:seed` | Nạp dữ liệu mẫu (chạy lại được, không trùng) |
 | `npm run db:generate` | Sinh migration từ thay đổi schema |
 | `npm test` | Chạy toàn bộ test (backend + frontend) |
-| `npm run test:backend` | 54 test backend |
-| `npm run test:frontend` | 32 test frontend |
+| `npm run test:backend` | 164 test backend |
+| `npm run test:frontend` | 50 test frontend |
 | `npm run test:proxy --workspace frontend` | Kiểm tra Pages Function |
 | `npm run test:setup --workspace backend` | Tạo database kiểm thử (mọi nền tảng) |
 | `powershell -File scripts\e2e.ps1` | Kiểm thử đầu-cuối trên Windows |
@@ -222,9 +222,25 @@ sẽ làm. Đọc trước khi công khai.
 
 ### Bảo mật
 
-- **Chưa có quét virus.** Tệp tải lên được kiểm tra bằng magic byte và chỉ nhận
-  định dạng nằm trong danh sách trắng, nhưng không có ClamAV. Hook đã có sẵn
-  (`document_files.scan_status`) — chỉ thiếu bộ quét.
+- **Quét virus mặc định TẮT, nhưng đã có sẵn.** ClamAV nằm sau một profile của
+  Compose (`docker compose --profile scan up -d clamav`) vì cơ sở dữ liệu chữ ký
+  chiếm ~1GB RAM — một khoản thật trên laptop. Bật bằng `SCAN_ENABLED=true`.
+
+  Nguyên tắc chi phối: **tệp chưa có kết luận thì không tải được.**
+  `document_files.status` giữ `pending` cho tới khi có phán quyết, và
+  `getDownloadUrl` vốn đã từ chối mọi thứ không phải `ready` — nên cổng chặn có
+  sẵn mà không phải sửa đường tải xuống. Bốn cách hỏng, cả bốn đều nghiêng về
+  phía không phục vụ:
+
+  - Phát hiện mã độc → `failed`, không bao giờ được phục vụ, báo người tải lên.
+  - clamd không phản hồi → thử lại rồi vào dead-letter; tệp vẫn `pending`.
+  - Tệp lớn hơn `SCAN_MAX_BYTES` → `skipped` và **không** phục vụ. "Không kiểm
+    tra được" không giống "an toàn".
+  - Quét đang tắt → `skipped` và vẫn phục vụ, vì người vận hành đã chọn vậy một
+    cách rõ ràng; để mọi tệp tải lên kẹt ở `pending` mãi mãi là tự gây sự cố.
+
+  Nếu `SCAN_ENABLED=true` mà clamd không trả lời, worker **từ chối khởi động**:
+  nhận job quét mà không có bộ quét là cùng một sự cố, chỉ chậm hơn.
 - **Chưa có Google OAuth.** Đã thiết kế xong (`auth_identities`), chưa bật vì
   chưa có thông tin xác thực.
 - **Email mặc định chỉ ghi ra console.** Đặt `MAIL_DRIVER=smtp` trước khi công
@@ -238,11 +254,17 @@ sẽ làm. Đọc trước khi công khai.
   phần từ (trigram), nhưng không có sửa lỗi gõ hay đồng nghĩa. Đây chính là lý do
   có interface `SearchProvider` — đổi sang Meilisearch chỉ cần thêm một lớp và
   một nhánh `case`.
-- **Chưa có tính năng xã hội.** Bài đăng, bình luận, theo dõi, bộ sưu tập, thông
-  báo, danh hiệu, bảng xếp hạng — chưa xây dựng. Lược đồ đã có chỗ cho chúng.
-- **Chưa có trang quản trị.** Các API quản trị đã có và đã kiểm soát quyền, nhưng
-  giao diện quản trị chưa xây dựng.
-- ~~Frontend chưa có test.~~ **Đã có** — 32 test cho API client và các hàm tiện ích. Chưa có test cho component/trang.
+- ~~Chưa có tính năng xã hội.~~ **Đã có** — bài đăng, bình luận, thích, theo dõi,
+  bộ sưu tập, bookmark, thông báo, uy tín, huy hiệu, bảng xếp hạng và feed.
+  Riêng tab **"Dành cho bạn"** là **heuristic minh bạch, không phải học máy**: nó
+  trộn nội dung đang theo dõi, đăng ký khoa/ngành/học phần và nội dung nổi bật,
+  rồi cộng điểm ái lực. Không có embedder hay ranker nào ở đây, và gọi nó là cá
+  nhân hoá sẽ đặt ra kỳ vọng mà ngăn xếp này không đáp ứng được.
+- ~~Chưa có trang quản trị.~~ **Đã có** — dashboard, người dùng, danh mục, hàng
+  đợi kiểm duyệt, báo cáo, nhật ký kiểm toán, lưu trữ và cài đặt. Xem
+  [ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md).
+- ~~Frontend chưa có test.~~ **Đã có** — 50 test, nhưng vẫn chỉ phủ API client,
+  các hàm tiện ích và hai trang. Phần lớn component và trang chưa có test.
 
 ### Vận hành
 
