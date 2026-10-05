@@ -100,6 +100,56 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/me', { preHandler: [app.authenticate] }, controller.me);
 
+  // --- Profile ---------------------------------------------------------------
+  //
+  // These live on the account endpoints rather than on `/users/:id`, matching
+  // the rule `users.route.ts` states: a profile is a projection of an account,
+  // and a second place to edit it would be a second place to forget a check.
+  //
+  // Every one of them acts on `request.user.id` — the authenticated identity —
+  // and none takes a target from the URL or the body. That is what makes
+  // "can I edit this profile?" unaskable rather than answered: there is no way
+  // to name somebody else's account in these requests.
+  //
+  // The image routes are rate-limited per user. Each request writes an object
+  // to the bucket and deletes the previous one, so an unbounded loop is a
+  // storage-churn vector rather than merely a nuisance.
+  app.patch(
+    '/me',
+    { preHandler: [app.authenticate, controller.csrfGuard] },
+    controller.updateMe,
+  );
+
+  app.post(
+    '/me/avatar',
+    {
+      preHandler: [app.authenticate, controller.csrfGuard],
+      config: { rateLimit: { max: 20, timeWindow: '1 hour' } },
+    },
+    controller.uploadAvatar,
+  );
+
+  app.delete(
+    '/me/avatar',
+    { preHandler: [app.authenticate, controller.csrfGuard] },
+    controller.deleteAvatar,
+  );
+
+  app.post(
+    '/me/cover',
+    {
+      preHandler: [app.authenticate, controller.csrfGuard],
+      config: { rateLimit: { max: 20, timeWindow: '1 hour' } },
+    },
+    controller.uploadCover,
+  );
+
+  app.delete(
+    '/me/cover',
+    { preHandler: [app.authenticate, controller.csrfGuard] },
+    controller.deleteCover,
+  );
+
   app.post(
     '/email/verify',
     {

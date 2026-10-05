@@ -6,6 +6,7 @@ import { recordAudit } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { paginate, type PaginationInput } from '../../lib/pagination.js';
 import { enqueuePreview } from '../../lib/preview/queue.js';
+import { MEDIA_TOKEN_TTL_SECONDS, signMediaToken } from '../../lib/media-token.js';
 import { enqueueScan } from '../../lib/scan/queue.js';
 import { scanningEnabled } from '../../workers/converter/scan.js';
 import { needsConversion, resolvePreview, type PreviewDescriptor } from '../../lib/preview/preview.resolver.js';
@@ -478,12 +479,48 @@ export interface DownloadTarget {
 }
 
 /**
- * Authorize a download and mint a short-lived URL.
+ * Where a browser should fetch a document's bytes.
  *
- * The storage key is never returned to the client — only a signed URL that
- * expires in ~2 minutes and grants access to exactly one object. This is the
- * only path by which bytes leave the system, which is what makes it possible to
- * log every download and to revoke access by simply not issuing a URL.
+ * SAME ORIGIN, NOT A SIGNED STORAGE URL. The obvious implementation hands the
+ * client a signed URL on the object store, and that is what this used to do.
+ * It is wrong for two reasons that only show up in a real browser:
+ *
+ *   THE DOWNLOAD NAME. `<a download="...">` is ignored for a cross-origin URL,
+ *   so the file saved under the storage key — a bare UUID with no extension —
+ *   instead of "Bài giảng C++.pdf". The user gets a file their machine cannot
+ *   open by double-clicking.
+ *
+ *   THE THIRD-PARTY CONTEXT. Every preview and download then loads from the
+ *   storage origin, which the browser treats as a third party: it partitions
+ *   storage and logs "Partitioned cookie or storage access was provided to
+ *   ... because it is loaded in the third-party context" on every one. That
+ *   warning appeared on the product's most-used feature.
+ *
+ * So the bytes are proxied through the API, and the URL carries a scoped media
+ * token because an `<img>`, an `<object>` and an `<a download>` cannot send an
+ * Authorization header. The token records the authorization decision that the
+ * caller has already been through; it does not replace it.
+ */
+async function contentUrl(
+  documentId: string,
+  fileId: string,
+  mode: 'preview' | 'download',
+): Promise<{ url: string; expiresInSeconds: number }> {
+  const token = await signMediaToken({ documentId, fileId });
+  const query = new URLSearchParams({ token, mode });
+  return {
+    url: `/api/v1/documents/${documentId}/files/${fileId}/content?${query.toString()}`,
+    // Matches the token's own lifetime, so a client that trusts this number
+    // and re-fetches after it is not presenting an expired token.
+    expiresInSeconds: MEDIA_TOKEN_TTL_SECONDS,
+  };
+}
+
+/**
+ * Authorize a download and describe where to get it.
+ *
+ * The storage key is never returned to the client — only a same-origin URL
+ * with a token that expires in minutes.
  */
 export async function getDownloadUrl(
   documentId: string,
@@ -516,16 +553,7 @@ export async function getDownloadUrl(
     throw new AppError('FILE_NOT_FOUND', 'Tệp chưa sẵn sàng để tải xuống.');
   }
 
-  const storage = getStorage();
-  const url = await storage.signedDownloadUrl(
-    { bucket: file.bucket, key: file.objectKey },
-    {
-      expiresInSeconds: env.S3_SIGNED_URL_TTL_SECONDS,
-      // The original name, RFC 5987-encoded, so a Vietnamese filename survives
-      // the download rather than arriving as mojibake.
-      downloadFilename: file.originalName,
-    },
-  );
+  const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'download');
 
   // Logged after the URL is minted. A download that was authorized but never
   // started still counts as intent, and the row is what abuse analysis reads.
@@ -541,16 +569,13 @@ export async function getDownloadUrl(
     })
     .catch(() => undefined);
 
-  void contentDisposition;
-
   return {
     url,
     fileName: file.originalName,
     mimeType: file.detectedMime,
-    expiresInSeconds: env.S3_SIGNED_URL_TTL_SECONDS,
+    expiresInSeconds,
   };
 }
-
 // =============================================================================
 // Preview
 // =============================================================================
@@ -666,28 +691,89 @@ export async function getPreview(
       };
     }
 
-    const url = await getStorage().signedDownloadUrl(
-      { bucket: preview.bucket, key: preview.objectKey },
-      // Inline disposition: this is a generated PDF being displayed, not a
-      // user file being saved.
-      { expiresInSeconds: env.S3_SIGNED_URL_TTL_SECONDS, contentType: 'application/pdf' },
-    );
-
-    return { ...base, url, expiresInSeconds: env.S3_SIGNED_URL_TTL_SECONDS, reason: null };
+    // The same content route serves the artifact; it resolves the artifact
+    // from the file row rather than trusting the caller to name an object.
+    const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
+    return { ...base, url, expiresInSeconds, reason: null };
   }
 
   // --- Natively renderable -------------------------------------------------
-  const url = await getStorage().signedDownloadUrl(
-    { bucket: file.bucket, key: file.objectKey },
-    {
-      expiresInSeconds: env.S3_SIGNED_URL_TTL_SECONDS,
-      // Only inline-safe types reach here; the resolver never returns
-      // `inline: true` for anything the browser might execute.
-      contentType: file.detectedMime,
-    },
-  );
+  const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
+  return { ...base, url, expiresInSeconds, reason: null };
+}
 
-  return { ...base, url, expiresInSeconds: env.S3_SIGNED_URL_TTL_SECONDS, reason: null };
+// =============================================================================
+// Content streaming
+// =============================================================================
+
+export interface ContentTarget {
+  bucket: string;
+  key: string;
+  contentType: string;
+  filename: string;
+}
+
+/**
+ * Resolve what a content token is allowed to read.
+ *
+ * NOTE WHAT THIS DOES NOT DO: it does not apply a viewer predicate, because
+ * there is no viewer — the request carries a token, not a session. That is
+ * sound, and only because the token is minted by a route that already applied
+ * the predicate, is scoped to this one file, and expires in ten minutes.
+ *
+ * What it *does* re-check is that the file is still servable right now. A
+ * document can be deleted, archived, or have its file quarantined by the
+ * scanner in the window between the token being issued and the bytes being
+ * fetched, and a token should not be a ten-minute bypass of that.
+ */
+export async function resolveContentTarget(
+  documentId: string,
+  fileId: string,
+  mode: 'preview' | 'download',
+): Promise<ContentTarget> {
+  const files = await repo.findDocumentFiles(documentId);
+  const file = files.find((f) => f.id === fileId);
+
+  if (!file) {
+    throw new AppError('FILE_NOT_FOUND', 'Không tìm thấy tệp.');
+  }
+
+  if (file.status !== 'ready') {
+    throw new AppError('FILE_NOT_FOUND', 'Tệp chưa sẵn sàng.');
+  }
+
+  // A preview of an Office file is the generated PDF, not the original — the
+  // browser cannot render a .docx, and the whole point of the conversion
+  // worker is that it can render this instead.
+  if (mode === 'preview') {
+    const descriptor = resolvePreview({
+      fileId: file.id,
+      detectedMime: file.detectedMime,
+      fileKind: file.fileKind,
+      originalName: file.originalName,
+      previewStatus: file.previewStatus,
+    });
+    if (descriptor.kind === 'office') {
+      const preview = await repo.findPreviewObject(documentId, file.id);
+      if (!preview) {
+        throw new AppError('PREVIEW_NOT_AVAILABLE', 'Bản xem trước chưa sẵn sàng.');
+      }
+      return {
+        bucket: preview.bucket,
+        key: preview.objectKey,
+        contentType: 'application/pdf',
+        // Shown inline; the name only matters for a save dialog.
+        filename: `${file.originalName}.pdf`,
+      };
+    }
+  }
+
+  return {
+    bucket: file.bucket,
+    key: file.objectKey,
+    contentType: file.detectedMime,
+    filename: file.originalName,
+  };
 }
 
 // =============================================================================

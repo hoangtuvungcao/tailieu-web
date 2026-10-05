@@ -82,6 +82,29 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
   // --- Preview --------------------------------------------------------------
   app.get('/:id/preview', optional, controller.previewDocument);
 
+  // --- Content --------------------------------------------------------------
+  //
+  // The bytes themselves, streamed from this origin rather than redirected to
+  // the storage host. Authorized by the media token in the query string,
+  // because none of the elements that fetch this URL can send a header.
+  //
+  // Rate-limited by IP rather than by user, since there is no authenticated
+  // user here: the token is the identity, and a leaked token being hammered is
+  // exactly the case this bounds.
+  app.get(
+    '/:id/files/:fileId/content',
+    {
+      config: {
+        rateLimit: {
+          max: 600,
+          timeWindow: '15 minutes',
+          keyGenerator: (request) => `content:${request.ip}`,
+        },
+      },
+    },
+    controller.streamContent,
+  );
+
   // --- Ratings --------------------------------------------------------------
   app.post(
     '/:id/ratings',

@@ -18,7 +18,10 @@ import {
 } from '../../lib/tokens.js';
 import { invalidatePermissionCaches, markSessionRevoked } from '../rbac/rbac.service.js';
 import * as repo from './auth.repository.js';
+import * as profileImages from './profile-image.service.js';
+import type { ProfileImageKind } from './profile-image.service.js';
 import { checkLoginThrottle, clearLoginFailures, recordLoginFailure } from './login-throttle.js';
+import type { UpdateProfileInput } from './auth.schema.js';
 
 /**
  * Authentication service.
@@ -62,7 +65,10 @@ export interface PublicUser {
   email: string;
   displayName: string;
   fullName: string | null;
+  username: string | null;
+  bio: string | null;
   avatarUrl: string | null;
+  coverUrl: string | null;
   emailVerified: boolean;
   roles: string[];
   primaryFacultyId: string | null;
@@ -75,7 +81,10 @@ function toPublicUser(user: repo.UserWithIdentity): PublicUser {
     email: user.email,
     displayName: user.displayName,
     fullName: user.fullName,
+    username: user.username,
+    bio: user.bio,
     avatarUrl: user.avatarUrl,
+    coverUrl: user.coverUrl,
     emailVerified: user.emailVerifiedAt !== null,
     roles: user.roleKeys,
     primaryFacultyId: user.primaryFacultyId,
@@ -683,4 +692,117 @@ export async function getCurrentUser(userId: string): Promise<PublicUser> {
   const user = await repo.findUserById(userId);
   if (!user) throw new AppError('USER_NOT_FOUND', 'Account not found.');
   return toPublicUser(user);
+}
+
+/**
+ * Change the parts of a profile a person owns.
+ *
+ * Every field is optional and an absent one is left untouched; an explicitly
+ * null one is cleared. The distinction is the whole reason the request schema
+ * uses `.nullish()` rather than `.optional().default(null)` — only one of those
+ * lets a user delete their bio without also deleting their display name.
+ *
+ * The username needs a uniqueness check the schema cannot express, because it
+ * is a property of the table rather than of the string. The check and the write
+ * share a transaction, and the unique index is still the real guarantee: two
+ * simultaneous claims both pass the check and one hits the constraint, which
+ * surfaces as the same "already taken" message rather than a 500.
+ */
+export async function updateProfile(
+  userId: string,
+  input: UpdateProfileInput,
+): Promise<PublicUser> {
+  const fields: {
+    displayName?: string;
+    fullName?: string | null;
+    bio?: string | null;
+    username?: string | null;
+  } = {};
+
+  if (input.displayName !== undefined) fields.displayName = input.displayName;
+  if (input.fullName !== undefined) fields.fullName = input.fullName;
+  if (input.bio !== undefined) fields.bio = input.bio;
+  // An empty string is how a form reports "I cleared this", and for a username
+  // that means the column goes back to null rather than to an empty string.
+  if (input.username !== undefined) {
+    fields.username = input.username === '' || input.username === null ? null : input.username;
+  }
+
+  await db.transaction(async (tx) => {
+    if (fields.username) {
+      if (await repo.usernameTakenByOther(fields.username, userId, tx)) {
+        throw new AppError('AUTH_USERNAME_TAKEN', 'Tên người dùng này đã có người sử dụng.');
+      }
+    }
+
+    await repo.updateProfileFields(tx, userId, fields);
+
+    await recordAudit(tx, {
+      action: 'user.profile_updated',
+      actorUserId: userId,
+      targetType: 'user',
+      targetId: userId,
+      // The field names, never the values. A bio can carry anything, and an
+      // audit log is read by more people than the profile is.
+      metadata: { fields: Object.keys(fields) },
+    });
+  });
+
+  return getCurrentUser(userId);
+}
+
+export type { ProfileImageKind };
+
+/**
+ * Replace or clear an avatar or cover image.
+ *
+ * Split out from `updateProfile` because the payload is a file rather than
+ * JSON and it is validated against the bytes; the two only share a subject.
+ */
+export async function replaceProfileImage(
+  userId: string,
+  kind: ProfileImageKind,
+  buffer: Buffer,
+  originalName: string,
+  declaredMime: string | null,
+): Promise<PublicUser> {
+  const current = await repo.findUserById(userId);
+  if (!current) throw new AppError('USER_NOT_FOUND', 'Account not found.');
+
+  const previous = kind === 'avatar' ? current.avatarUrl : current.coverUrl;
+
+  await profileImages.replace(userId, kind, buffer, originalName, declaredMime, previous);
+
+  await recordAudit(db, {
+    action: kind === 'avatar' ? 'user.avatar_updated' : 'user.cover_updated',
+    actorUserId: userId,
+    targetType: 'user',
+    targetId: userId,
+    metadata: { kind },
+  });
+
+  return getCurrentUser(userId);
+}
+
+export async function clearProfileImage(
+  userId: string,
+  kind: ProfileImageKind,
+): Promise<PublicUser> {
+  const current = await repo.findUserById(userId);
+  if (!current) throw new AppError('USER_NOT_FOUND', 'Account not found.');
+
+  const previous = kind === 'avatar' ? current.avatarUrl : current.coverUrl;
+
+  await repo.updateImageField(userId, kind === 'avatar' ? 'avatarUrl' : 'coverUrl', null);
+  await profileImages.remove(previous, kind);
+
+  await recordAudit(db, {
+    action: kind === 'avatar' ? 'user.avatar_removed' : 'user.cover_removed',
+    actorUserId: userId,
+    targetType: 'user',
+    targetId: userId,
+    metadata: { kind },
+  });
+
+  return getCurrentUser(userId);
 }

@@ -1,6 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { AppError } from '../../lib/errors.js';
+import { streamObject } from '../../lib/http/stream-object.js';
+import { verifyMediaToken } from '../../lib/media-token.js';
 import { paginationMeta } from '../../lib/pagination.js';
 import { parseBody, parseParams, parseQuery } from '../../lib/validation.js';
 import { getUserModerationScope, getUserPermissions } from '../rbac/rbac.service.js';
@@ -147,6 +149,58 @@ export async function previewDocument(request: FastifyRequest, reply: FastifyRep
   const query = request.query as { fileId?: string };
 
   return reply.ok(await service.getPreview(id, query.fileId ?? null, actor));
+}
+
+/**
+ * Serve a document's bytes to the browser.
+ *
+ * NOT `optionalAuth`, and not `authenticate` either. The caller arrives from an
+ * `<img>`, an `<object>` or an `<a download>`, none of which can attach a
+ * header, so the authorization decision travels in the `token` query parameter
+ * — proof that some earlier request already passed the visibility check.
+ *
+ * The token is checked against BOTH ids in the path. Without that, a token for
+ * a document the caller may read would fetch any other file by editing the URL,
+ * which is the whole reason the claims carry a file id rather than the route
+ * inferring one.
+ */
+export async function streamContent(request: FastifyRequest, reply: FastifyReply) {
+  const params = request.params as { id?: string; fileId?: string };
+  const query = request.query as { token?: string; mode?: string };
+
+  const documentId = params.id ?? '';
+  const fileId = params.fileId ?? '';
+
+  if (!query.token) {
+    throw new AppError('MEDIA_TOKEN_INVALID', 'Liên kết xem tệp không hợp lệ.');
+  }
+
+  const claims = await verifyMediaToken(query.token);
+
+  if (claims.documentId !== documentId || claims.fileId !== fileId) {
+    // Deliberately not "wrong file": naming which half mismatched is a hint
+    // about what a valid token would look like.
+    throw new AppError('MEDIA_TOKEN_INVALID', 'Liên kết xem tệp không hợp lệ.');
+  }
+
+  const mode = query.mode === 'download' ? 'download' : 'preview';
+
+  const target = await service.resolveContentTarget(documentId, fileId, mode);
+
+  return streamObject(request, reply, {
+    location: { bucket: target.bucket, key: target.key },
+    contentType: target.contentType,
+    disposition: {
+      // A preview is displayed; a download is saved. Sending `attachment` for a
+      // preview makes the PDF viewer download the file and show a blank frame,
+      // which is the classic "preview does nothing" bug.
+      kind: mode === 'download' ? 'attachment' : 'inline',
+      filename: target.filename,
+    },
+    // Never cached by a shared cache: this is one person's authorized document,
+    // and the token in the URL would be stored alongside it.
+    cacheControl: 'private, no-store',
+  });
 }
 
 export async function rateDocument(request: FastifyRequest, reply: FastifyReply) {

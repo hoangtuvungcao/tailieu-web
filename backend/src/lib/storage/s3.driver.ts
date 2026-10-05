@@ -23,6 +23,7 @@ import { contentDisposition } from '../http/content-disposition.js';
 import { HashTee } from '../streams/hash-tee.js';
 import type {
   CompletedPart,
+  GetStreamOptions,
   MultipartInit,
   ObjectLocation,
   PutStreamOptions,
@@ -165,9 +166,18 @@ export class S3StorageDriver implements StorageDriver {
     }
   }
 
-  async getStream(location: ObjectLocation): Promise<Readable> {
+  async getStream(location: ObjectLocation, options?: GetStreamOptions): Promise<Readable> {
+    const range = options?.range;
     const response = await this.client.send(
-      new GetObjectCommand({ Bucket: location.bucket, Key: location.key }),
+      new GetObjectCommand({
+        Bucket: location.bucket,
+        Key: location.key,
+        // S3's range header is inclusive at both ends and uses `bytes=0-` for
+        // "to the end", so an absent `end` must not become a literal `-0`.
+        ...(range
+          ? { Range: `bytes=${range.start}-${range.end ?? ''}` }
+          : {}),
+      }),
     );
     if (!response.Body) {
       throw new Error(`Object ${location.bucket}/${location.key} returned an empty body.`);

@@ -20,6 +20,25 @@ export interface ObjectLocation {
   key: string;
 }
 
+/**
+ * A byte range, inclusive at both ends, matching the HTTP `Range` semantics.
+ *
+ * It exists because a PDF viewer does not download a PDF — it reads the
+ * trailer at the end, then seeks. Without ranges the whole file would have to
+ * cross the wire before the first page appears, which on a 200-page thesis
+ * over a campus connection is the difference between a preview and a stall.
+ */
+export interface ByteRange {
+  start: number;
+  /** Inclusive. Omit to read to the end of the object. */
+  end?: number;
+}
+
+export interface GetStreamOptions {
+  /** Read only this slice. The caller is responsible for clamping it. */
+  range?: ByteRange;
+}
+
 export interface PutStreamOptions {
   bucket: string;
   key: string;
@@ -63,8 +82,14 @@ export interface StorageDriver {
   /** Stream an object in. Returns the hash and size of what was written. */
   putStream(options: PutStreamOptions): Promise<PutStreamResult>;
 
-  /** Stream an object out. */
-  getStream(location: ObjectLocation): Promise<Readable>;
+  /**
+   * Stream an object out.
+   *
+   * With no options this is the whole object. With a `range` the backend may
+   * return only that slice — it is a request, not a guarantee, so a caller
+   * that needs exactly those bytes must check what it got.
+   */
+  getStream(location: ObjectLocation, options?: GetStreamOptions): Promise<Readable>;
 
   /** Copy server-side, without the bytes traversing this process. */
   copyObject(source: ObjectLocation, destination: ObjectLocation): Promise<void>;

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 
 import { db, type Database } from '../../db/client.js';
 import {
@@ -29,6 +29,9 @@ export interface UserWithIdentity {
   displayName: string;
   fullName: string | null;
   avatarUrl: string | null;
+  coverUrl: string | null;
+  username: string | null;
+  bio: string | null;
   status: 'active' | 'suspended' | 'deactivated';
   emailVerifiedAt: Date | null;
   tokenVersion: number;
@@ -57,6 +60,9 @@ export async function findUserForLogin(
       displayName: users.displayName,
       fullName: users.fullName,
       avatarUrl: users.avatarUrl,
+      coverUrl: users.coverUrl,
+      username: users.username,
+      bio: users.bio,
       status: users.status,
       emailVerifiedAt: users.emailVerifiedAt,
       tokenVersion: users.tokenVersion,
@@ -103,6 +109,9 @@ export async function findUserById(
       displayName: users.displayName,
       fullName: users.fullName,
       avatarUrl: users.avatarUrl,
+      coverUrl: users.coverUrl,
+      username: users.username,
+      bio: users.bio,
       status: users.status,
       emailVerifiedAt: users.emailVerifiedAt,
       tokenVersion: users.tokenVersion,
@@ -223,6 +232,72 @@ export async function markEmailVerified(tx: Tx, userId: string): Promise<void> {
   await tx
     .update(users)
     .set({ emailVerifiedAt: new Date(), updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
+// --- Profile -----------------------------------------------------------------
+
+/**
+ * Is this username already held by somebody else?
+ *
+ * `usernameExists` cannot answer that: leaving your own username unchanged
+ * would come back as a conflict against yourself, so every save of an
+ * unrelated field would be rejected.
+ */
+export async function usernameTakenByOther(
+  username: string,
+  userId: string,
+  executor: Tx | typeof db = db,
+): Promise<boolean> {
+  const rows = await executor
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.username, username), ne(users.id, userId)))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * Write only the fields the caller actually sent.
+ *
+ * An absent key must mean "leave it alone", not "set it to null" — otherwise
+ * a form that omits a field the UI did not render would silently erase it. The
+ * caller is responsible for having already turned an emptied input into an
+ * explicit `null`.
+ */
+export async function updateProfileFields(
+  tx: Tx,
+  userId: string,
+  fields: {
+    displayName?: string;
+    fullName?: string | null;
+    bio?: string | null;
+    username?: string | null;
+  },
+): Promise<void> {
+  if (Object.keys(fields).length === 0) return;
+
+  await tx
+    .update(users)
+    .set({ ...fields, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * Point the account at a new avatar or cover object, or at nothing.
+ *
+ * A plain update, not a transaction member: the object has already been
+ * written and the previous one deleted by the time this runs, so there is no
+ * second write to keep it consistent with.
+ */
+export async function updateImageField(
+  userId: string,
+  field: 'avatarUrl' | 'coverUrl',
+  url: string | null,
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ [field]: url, updatedAt: new Date() })
     .where(eq(users.id, userId));
 }
 

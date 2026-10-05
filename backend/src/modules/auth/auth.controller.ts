@@ -10,6 +10,7 @@ import {
   loginSchema,
   registerSchema,
   resetPasswordSchema,
+  updateProfileSchema,
   verifyEmailSchema,
 } from './auth.schema.js';
 
@@ -179,6 +180,83 @@ export async function me(request: FastifyRequest, reply: FastifyReply) {
   const profile = await service.getCurrentUser(user.id);
   return reply.ok(profile);
 }
+
+/**
+ * Update the parts of a profile the account owns.
+ *
+ * CSRF-guarded like every other state-changing route that authenticates from a
+ * header: the access token is in memory rather than a cookie, so a forged
+ * cross-site request cannot carry it — but adding the guard costs one header
+ * check and removes the need to reason about that per route.
+ */
+export async function updateMe(request: FastifyRequest, reply: FastifyReply) {
+  const user = request.user!;
+  const body = parseBody(updateProfileSchema, request.body);
+  const updated = await service.updateProfile(user.id, body);
+  return reply.ok(updated, {}, 'Đã cập nhật hồ sơ.');
+}
+
+/**
+ * Upload an avatar or a cover image.
+ *
+ * Read into a buffer rather than streamed to storage, unlike a document
+ * upload. The bytes have to be inspected before anything is written — an image
+ * is the one upload class the browser renders on this origin — and at 2MB
+ * (5MB for a cover) buffering one image per request is bounded and cheap. The
+ * multipart plugin's own limit is the outer bound; this is the inner one.
+ */
+function imageHandler(kind: service.ProfileImageKind) {
+  return async function uploadProfileImage(request: FastifyRequest, reply: FastifyReply) {
+    const user = request.user!;
+
+    if (!request.isMultipart()) {
+      throw new AppError('BAD_REQUEST', 'Yêu cầu phải là multipart/form-data.');
+    }
+
+    const part = await request.file();
+    if (!part) {
+      throw new AppError('BAD_REQUEST', 'Không tìm thấy tệp nào trong yêu cầu.');
+    }
+
+    // `toBuffer` enforces the plugin's `fileSize` limit and throws
+    // FST_REQ_FILE_TOO_LARGE past it, which the error handler maps to a 413.
+    // The per-kind limit in the service is tighter and gives a message naming
+    // the actual budget.
+    const buffer = await part.toBuffer();
+
+    const updated = await service.replaceProfileImage(
+      user.id,
+      kind,
+      buffer,
+      part.filename,
+      part.mimetype ?? null,
+    );
+
+    return reply.ok(
+      updated,
+      {},
+      kind === 'avatar' ? 'Đã cập nhật ảnh đại diện.' : 'Đã cập nhật ảnh bìa.',
+    );
+  };
+}
+
+export const uploadAvatar = imageHandler('avatar');
+export const uploadCover = imageHandler('cover');
+
+function clearHandler(kind: service.ProfileImageKind) {
+  return async function clearProfileImage(request: FastifyRequest, reply: FastifyReply) {
+    const user = request.user!;
+    const updated = await service.clearProfileImage(user.id, kind);
+    return reply.ok(
+      updated,
+      {},
+      kind === 'avatar' ? 'Đã xoá ảnh đại diện.' : 'Đã xoá ảnh bìa.',
+    );
+  };
+}
+
+export const deleteAvatar = clearHandler('avatar');
+export const deleteCover = clearHandler('cover');
 
 export async function verifyEmail(request: FastifyRequest, reply: FastifyReply) {
   const body = parseBody(verifyEmailSchema, request.body);

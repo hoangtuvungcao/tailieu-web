@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { adminRoutes } from '../modules/admin/admin.route.js';
 import { authRoutes } from '../modules/auth/auth.route.js';
 import { healthRoutes } from '../modules/health/health.route.js';
+import { mediaRoutes } from '../modules/media/media.route.js';
 import { searchRoutes } from '../modules/search/search.route.js';
 import { bookmarkRoutes } from '../modules/social/bookmarks/bookmarks.route.js';
 import { collectionRoutes } from '../modules/social/collections/collections.route.js';
@@ -53,6 +54,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       v1.register(userRoutes, { prefix: '/users' });
       v1.register(leaderboardRoutes, { prefix: '/leaderboards' });
       v1.register(feedRoutes, { prefix: '/feed' });
+      // Public profile images. Registered under /api/v1/media and referenced by
+      // the paths stored in users.avatar_url and users.cover_url — the two must
+      // stay in step, which is why `media.paths.ts` owns both directions.
+      v1.register(mediaRoutes, { prefix: '/media' });
 
       // Remaining feature modules land here as they are built:
     },

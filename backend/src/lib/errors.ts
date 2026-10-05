@@ -77,6 +77,11 @@ export type ErrorCode =
   | 'FILE_SIGNATURE_MISMATCH'
   | 'STORAGE_UNAVAILABLE'
   | 'PREVIEW_NOT_AVAILABLE'
+  // --- Media ----------------------------------------------------------------
+  | 'MEDIA_TOKEN_INVALID'
+  | 'MEDIA_TOKEN_EXPIRED'
+  | 'MEDIA_NOT_FOUND'
+  | 'MEDIA_RANGE_INVALID'
   // --- Uploads ---------------------------------------------------------------
   | 'UPLOAD_SESSION_NOT_FOUND'
   | 'UPLOAD_SESSION_EXPIRED'
@@ -156,6 +161,11 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   FILE_SIGNATURE_MISMATCH: 415,
   STORAGE_UNAVAILABLE: 503,
   PREVIEW_NOT_AVAILABLE: 404,
+
+  MEDIA_TOKEN_INVALID: 403,
+  MEDIA_TOKEN_EXPIRED: 403,
+  MEDIA_NOT_FOUND: 404,
+  MEDIA_RANGE_INVALID: 416,
 
   UPLOAD_SESSION_NOT_FOUND: 404,
   UPLOAD_SESSION_EXPIRED: 410,
