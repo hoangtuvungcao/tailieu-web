@@ -203,7 +203,7 @@ Biến môi trường bắt buộc cho Pages: `API_ORIGIN` (hostname tunnel).
 | [ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) | Vận hành hằng ngày, phân quyền, xử lý sự cố | ✅ |
 | [USER_GUIDE.md](docs/USER_GUIDE.md) | Dành cho sinh viên và giảng viên | ✅ |
 | [ENVIRONMENT.md](docs/ENVIRONMENT.md) | Biến môi trường: cái nào quan trọng, sai thì hỏng gì | ✅ |
-| [SQLSERVER_MIGRATION.md](docs/SQLSERVER_MIGRATION.md) | Kế hoạch di trú sang SQL Server 2017 — khối lượng, mất mát, thứ tự | 📋 |
+| [SQLSERVER_MIGRATION.md](docs/SQLSERVER_MIGRATION.md) | Hồ sơ quyết định: vì sao **ở lại PostgreSQL** thay vì SQL Server 2017 | ✅ |
 
 > **`.env.example` là danh sách đầy đủ**; `ENVIRONMENT.md` bổ sung phần nó không
 > nói: biến nào sai sẽ hỏng **lặng lẽ**, khác gì giữa dev và production, và vì sao

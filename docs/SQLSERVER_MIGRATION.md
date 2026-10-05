@@ -1,9 +1,10 @@
-# Kế hoạch di trú sang SQL Server 2017
+# Di trú sang SQL Server 2017 — hồ sơ quyết định
 
-Tài liệu này là **kế hoạch**, không phải hướng dẫn đã thi công xong. Khối lượng ở §1
-và số chỗ ở §2 được **đo trực tiếp từ mã nguồn** bằng `grep`/`wc`. Các kết luận về
-SQL Server ở §7 được **chạy thử trên một instance SQL Server 2017 thật** — và một
-trong số đó ngược với điều tôi tưởng ban đầu.
+Đây là hồ sơ của **một quyết định không làm**, không phải hướng dẫn thi công: ngày
+05/10/2026 dự án chốt ở lại PostgreSQL cho lần deploy này, và **không có dòng mã di
+trú nào được viết**. Khối lượng ở §1 và số chỗ ở §2 được **đo trực tiếp từ mã nguồn**
+bằng `grep`/`wc`. Các kết luận về SQL Server ở §7 được **chạy thử trên một instance
+SQL Server 2017 thật** — và một trong số đó ngược với điều tôi tưởng ban đầu.
 
 Đọc [DEPLOYMENT.md](DEPLOYMENT.md) và [WINDOWS.md](WINDOWS.md) trước. Bản WINDOWS.md
 hiện có hướng dẫn đầy đủ cho **PostgreSQL** trên Windows Server 2012 R2, và nó đã
@@ -24,9 +25,14 @@ chạy được. Tài liệu này mô tả cái giá của việc đổi sang SQ
 | Vòng đời | SQL Server 2017 hết hỗ trợ mở rộng **12/10/2027** |
 | Rào cản hệ điều hành | Không còn: 2017 chạy được trên Windows Server 2012 R2 |
 
-**Khuyến nghị:** giữ PostgreSQL cho lần deploy này. Bản hướng dẫn Windows hiện có đã
-đầy đủ và đã kiểm chứng. Nếu ràng buộc là bắt buộc dùng SQL Server, hãy đọc §3 trước
-khi quyết định — đó là chỗ duy nhất có mất mát không bù được bằng công sức.
+**Quyết định (05/10/2026): giữ PostgreSQL cho lần deploy này.** Đây là **hồ sơ của
+một quyết định đã chốt**, không phải việc đang chờ làm — không có dòng mã di trú nào
+được viết và sẽ không có trong đợt này. Bản hướng dẫn Windows hiện có đã đầy đủ và đã
+kiểm chứng.
+
+Tài liệu được giữ lại vì nếu ràng buộc sau này đổi, phần **đo được** ở §1, §2, §7 vẫn
+còn nguyên giá trị — và §3 là chỗ duy nhất có mất mát không bù được bằng công sức, nên
+đọc nó trước khi mở lại quyết định này.
 
 ---
 
