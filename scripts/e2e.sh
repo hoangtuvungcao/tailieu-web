@@ -50,6 +50,54 @@ cookie() { grep -i "^set-cookie: $1=" "$2" 2>/dev/null | head -1 | sed -E "s/^[S
 # for a reason that has nothing to do with the application.
 jget() { python3 -c "import sys,json;d=json.load(sys.stdin);print(eval('d'+sys.argv[1]))" "$1" 2>/dev/null; }
 
+# Same contract as `jget`, evaluated against the first saved item for a target.
+jget_saved() {
+  python3 -c "
+import sys, json
+rows = [b for b in json.load(sys.stdin)['data'] if b['target']['id'] == sys.argv[1]]
+print(eval('rows[0]' + sys.argv[2]) if rows else '')
+" "$1" "$2" 2>/dev/null
+}
+
+# How many saved items point at a target.
+saved_count() {
+  python3 -c "
+import sys, json
+print(len([b for b in json.load(sys.stdin)['data'] if b['target']['id'] == sys.argv[1]]))
+" "$1" 2>/dev/null
+}
+
+# What a folder reports, or empty when the folder is absent entirely.
+folder_total() {
+  python3 -c "
+import sys, json
+rows = [f for f in json.load(sys.stdin)['data'] if f['folder'] == sys.argv[1]]
+print(rows[0]['total'] if rows else '')
+" "$1" 2>/dev/null
+}
+
+# Notifications pointing at one target, counted.
+#
+# Filtered by target rather than "the newest row", because a run leaves rows
+# behind and the next run must not be judged on them. Both helpers take the
+# target id as argv for the reason spelled out above `jget`.
+notif_count() {
+  python3 -c "
+import sys, json
+rows = [n for n in json.load(sys.stdin)['data'] if n['targetId'] == sys.argv[1]]
+print(len(rows))
+" "$1" 2>/dev/null
+}
+
+# Same contract as `jget`, evaluated against the first notification for a target.
+jget_notif() {
+  python3 -c "
+import sys, json
+rows = [n for n in json.load(sys.stdin)['data'] if n['targetId'] == sys.argv[1]]
+print(eval('rows[0]' + sys.argv[2]) if rows else '')
+" "$1" "$2" 2>/dev/null
+}
+
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
 TMP=$(mktemp -d)
@@ -432,9 +480,159 @@ check "tạo được bộ sưu tập riêng tư" "private" \
 check "khách ẩn danh nhận 404 cho bộ sưu tập riêng tư" "404" \
   "$(code "$API/collections/$COL_PRIV")"
 
-# ─── 12. CSRF ───────────────────────────────────────────────────────────────
+# ─── 12. Thông báo ──────────────────────────────────────────────────────────
 echo
-echo "12. Bảo vệ CSRF"
+echo "12. Thông báo"
+
+# A fresh session: the student's original one is torn down in the CSRF section
+# below, so this one has to stand on its own. No `x-csrf-token` is sent, and
+# none is needed — `authenticate` is Bearer-only, so a forged cross-site form
+# cannot replay the token. See the note in plugins/auth.plugin.ts.
+curl -s -D "$TMP/h-notif" -o "$TMP/b-notif" -X POST "$API/auth/login" \
+  -H 'content-type: application/json' \
+  -d '{"email":"student@tailieu.local","password":"ChangeMe_Student_2026"}'
+NTOKEN=$(jget "['data']['accessToken']" < "$TMP/b-notif")
+NAUTH="authorization: Bearer $NTOKEN"
+MAUTH="authorization: Bearer $MOD_TOKEN"
+
+# The badge is a denormalised column and previous runs leave rows behind, so
+# this is asserted as a delta. An absolute number would fail on the second run,
+# for a reason that has nothing to do with notifications.
+UNREAD_BEFORE=$(curl -s "$API/notifications/unread-count" -H "$NAUTH" | jget "['data']['unread']")
+
+# Somebody ELSE acts on the student's post. Their own action must not notify
+# them, which is exactly why this is a different account.
+NOTIF_COMMENT=$(curl -s -X POST "$API/comments" -H "$MAUTH" -H "$FJSON" \
+  -d "{\"targetType\":\"post\",\"targetId\":\"$POST_ID\",\"body\":\"E2E- bình luận của kiểm duyệt viên\"}" \
+  | jget "['data']['id']")
+check "kiểm duyệt viên bình luận được" "yes" "$([ -n "$NOTIF_COMMENT" ] && echo yes || echo no)"
+
+check "badge chưa đọc tăng đúng 1" "$((UNREAD_BEFORE + 1))" \
+  "$(curl -s "$API/notifications/unread-count" -H "$NAUTH" | jget "['data']['unread']")"
+
+# This is the regression the section exists for: `post_comment` and
+# `comment_reply` were declared in the database enum and in the TypeScript
+# union, but nothing ever emitted them. Likes and follows notified correctly, so
+# the feature looked finished while a reply told nobody.
+NOTIFS=$(curl -s "$API/notifications?limit=50" -H "$NAUTH")
+check "sinh viên nhận đúng 1 thông báo cho bài này" "1" "$(echo "$NOTIFS" | notif_count "$POST_ID")"
+check "đúng loại thông báo" "post_comment" "$(echo "$NOTIFS" | jget_notif "$POST_ID" "['kind']")"
+check "nêu tên người đã tác động" "Kiểm duyệt viên" \
+  "$(echo "$NOTIFS" | jget_notif "$POST_ID" "['actorName']")"
+check "thông báo còn chưa đọc" "None" "$(echo "$NOTIFS" | jget_notif "$POST_ID" "['readAt']")"
+
+# A reply notifies the person replied to — not the post author as well, which
+# would be the same fact told twice and would bury them.
+NOTIF_REPLY=$(curl -s -X POST "$API/comments" -H "$NAUTH" -H "$FJSON" \
+  -d "{\"targetType\":\"post\",\"targetId\":\"$POST_ID\",\"body\":\"E2E- trả lời của sinh viên\",\"parentCommentId\":\"$NOTIF_COMMENT\"}" \
+  | jget "['data']['id']")
+check "sinh viên trả lời được" "yes" "$([ -n "$NOTIF_REPLY" ] && echo yes || echo no)"
+
+MOD_NOTIFS=$(curl -s "$API/notifications?limit=50" -H "$MAUTH")
+check "người được trả lời nhận thông báo" "1" "$(echo "$MOD_NOTIFS" | notif_count "$POST_ID")"
+check "đúng loại thông báo trả lời" "comment_reply" \
+  "$(echo "$MOD_NOTIFS" | jget_notif "$POST_ID" "['kind']")"
+# A comment has no page of its own, so a notification targeting one would be a
+# link to nowhere. It points at the thread instead.
+check "trả lời trỏ tới bài viết, không phải bình luận" "post" \
+  "$(echo "$MOD_NOTIFS" | jget_notif "$POST_ID" "['targetType']")"
+
+# The list carries actor identity and nothing else — no snapshot of the target's
+# title, which would keep announcing something the reader may have lost access
+# to. So the body must not contain the comment's text.
+check "payload không chứa nội dung mục tiêu" "no" \
+  "$(echo "$NOTIFS" | grep -q 'bài kiểm thử luồng bình luận' && echo yes || echo no)"
+
+# Aggregation: a second comment on the same post collapses into the existing
+# unread row, so the badge must not move again.
+UNREAD_AGG=$(curl -s "$API/notifications/unread-count" -H "$NAUTH" | jget "['data']['unread']")
+curl -s -o /dev/null -X POST "$API/comments" -H "$MAUTH" -H "$FJSON" \
+  -d "{\"targetType\":\"post\",\"targetId\":\"$POST_ID\",\"body\":\"E2E- bình luận thứ hai\"}"
+check "bình luận thứ hai không đếm thêm vào badge" "$UNREAD_AGG" \
+  "$(curl -s "$API/notifications/unread-count" -H "$NAUTH" | jget "['data']['unread']")"
+check "vẫn chỉ một dòng cho bài này" "1" \
+  "$(curl -s "$API/notifications?limit=50" -H "$NAUTH" | notif_count "$POST_ID")"
+
+check "đánh dấu tất cả đã đọc" "200" "$(code -X POST "$API/notifications/read-all" -H "$NAUTH")"
+check "badge về 0 sau khi đọc hết" "0" \
+  "$(curl -s "$API/notifications/unread-count" -H "$NAUTH" | jget "['data']['unread']")"
+
+# ─── 13. Đã lưu ─────────────────────────────────────────────────────────────
+echo
+echo "13. Đã lưu"
+
+# Owned by the moderator, so the student's access to it can actually be
+# withdrawn. A user always sees their own private content, so hiding the
+# student's own post would prove nothing at all.
+BOOK_POST=$(curl -s -X POST "$API/posts" -H "$MAUTH" -H "$FJSON" \
+  -d '{"body":"E2E- bài để kiểm thử đã lưu","visibility":"public","postKind":"status","tags":[]}' \
+  | jget "['data']['id']")
+check "kiểm duyệt viên tạo bài công khai" "yes" "$([ -n "$BOOK_POST" ] && echo yes || echo no)"
+
+BOOK_FOLDER="E2E-Ôn thi"
+check "lưu kèm thư mục" "True" \
+  "$(curl -s -X PUT "$API/bookmarks/post/$BOOK_POST" -H "$NAUTH" -H "$FJSON" \
+     -d "{\"bookmarked\":true,\"folder\":\"$BOOK_FOLDER\"}" | jget "['data']['bookmarked']")"
+
+# The list used to come back as bare pointers — `{targetType, targetId}` and
+# nothing else. Safe, because the visibility filter ran, but not renderable:
+# no title, no owner, nothing a page could draw.
+SAVED=$(curl -s "$API/bookmarks?limit=50" -H "$NAUTH")
+check "danh sách trả về tiêu đề thật" "E2E- bài để kiểm thử đã lưu" \
+  "$(echo "$SAVED" | jget_saved "$BOOK_POST" "['target']['title']")"
+check "danh sách trả về tên chủ sở hữu" "Kiểm duyệt viên" \
+  "$(echo "$SAVED" | jget_saved "$BOOK_POST" "['target']['owner']['displayName']")"
+check "thư mục được ghi lại" "$BOOK_FOLDER" \
+  "$(echo "$SAVED" | jget_saved "$BOOK_POST" "['folder']")"
+check "bộ đếm thư mục khớp danh sách" "1" \
+  "$(curl -s "$API/bookmarks/folders" -H "$NAUTH" | folder_total "$BOOK_FOLDER")"
+
+# The author withdraws it. The bookmark outlives the reader's access to what it
+# points at, and nothing but a re-check at read time stops the list from
+# printing a title the reader may no longer open.
+check "tác giả chuyển bài sang riêng tư" "200" \
+  "$(code -X PATCH "$API/posts/$BOOK_POST" -H "$MAUTH" -H "$FJSON" -d '{"visibility":"private"}')"
+
+AFTER_SAVE=$(curl -s "$API/bookmarks?limit=50" -H "$NAUTH")
+check "mục đã lưu biến mất khỏi danh sách" "0" "$(echo "$AFTER_SAVE" | saved_count "$BOOK_POST")"
+check "không rò tiêu đề trong body" "no" \
+  "$(echo "$AFTER_SAVE" | grep -q 'E2E- bài để kiểm thử đã lưu' && echo yes || echo no)"
+check "không rò id trong body" "no" \
+  "$(echo "$AFTER_SAVE" | grep -q "$BOOK_POST" && echo yes || echo no)"
+# A folder that advertised a row the list will not show is the same defect as a
+# comment count that disagreed with its thread.
+check "bộ đếm thư mục cũng biến mất" "" \
+  "$(curl -s "$API/bookmarks/folders" -H "$NAUTH" | folder_total "$BOOK_FOLDER")"
+
+# `folder` is three-valued, and the three cases must stay distinguishable.
+# Collapsing "omitted" into "null" — the obvious `.nullish()` — makes a folder
+# impossible to remove once set, because the two opposite requests become
+# byte-identical.
+curl -s -o /dev/null -X PATCH "$API/posts/$BOOK_POST" -H "$MAUTH" -H "$FJSON" -d '{"visibility":"public"}'
+curl -s -o /dev/null -X PUT "$API/bookmarks/post/$BOOK_POST" -H "$NAUTH" -H "$FJSON" \
+  -d "{\"bookmarked\":true,\"folder\":\"$BOOK_FOLDER\"}"
+curl -s -o /dev/null -X PUT "$API/bookmarks/post/$BOOK_POST" -H "$NAUTH" -H "$FJSON" \
+  -d '{"bookmarked":true,"folder":null}'
+check "gửi null thì bỏ khỏi thư mục" "None" \
+  "$(curl -s "$API/bookmarks?limit=50" -H "$NAUTH" | jget_saved "$BOOK_POST" "['folder']")"
+check "vẫn còn trong danh sách đã lưu" "1" \
+  "$(curl -s "$API/bookmarks?limit=50" -H "$NAUTH" | saved_count "$BOOK_POST")"
+
+curl -s -o /dev/null -X PUT "$API/bookmarks/post/$BOOK_POST" -H "$NAUTH" -H "$FJSON" \
+  -d "{\"bookmarked\":true,\"folder\":\"$BOOK_FOLDER\"}"
+# What the Lưu button on a detail page sends: no folder key at all.
+curl -s -o /dev/null -X PUT "$API/bookmarks/post/$BOOK_POST" -H "$NAUTH" -H "$FJSON" \
+  -d '{"bookmarked":true}'
+check "bỏ trống trường thư mục thì giữ nguyên" "$BOOK_FOLDER" \
+  "$(curl -s "$API/bookmarks?limit=50" -H "$NAUTH" | jget_saved "$BOOK_POST" "['folder']")"
+
+check "bỏ lưu được" "False" \
+  "$(curl -s -X PUT "$API/bookmarks/post/$BOOK_POST" -H "$NAUTH" -H "$FJSON" \
+     -d '{"bookmarked":false}' | jget "['data']['bookmarked']")"
+
+# ─── 14. CSRF ───────────────────────────────────────────────────────────────
+echo
+echo "14. Bảo vệ CSRF"
 check "thiếu header CSRF thì 403" "403" \
   "$(code -X POST "$API/auth/logout" -H "$AUTH" -H "$COOKIES")"
 check "sai header CSRF thì 403" "403" \
@@ -443,9 +641,9 @@ check "đúng header CSRF thì 200" "200" \
   "$(code -X POST "$API/auth/logout" -H "$AUTH" -H "$COOKIES" -H "x-csrf-token: $CSRF")"
 check "token chết sau khi đăng xuất" "401" "$(code "$API/auth/me" -H "$AUTH")"
 
-# ─── 12. Xoá dữ liệu kiểm thử ───────────────────────────────────────────────
+# ─── 15. Xoá dữ liệu kiểm thử ───────────────────────────────────────────────
 echo
-echo "13. Dọn dẹp"
+echo "15. Dọn dẹp"
 check "xoá được tài liệu của mình" "200" \
   "$(code -X DELETE "$API/documents/$DOC_ID" -H "authorization: Bearer $FRESH")"
 check "tài liệu đã xoá thì 404" "404" "$(code "$API/documents/$DOC_ID" -H "authorization: Bearer $FRESH")"
@@ -469,6 +667,11 @@ fi
 
 if [ -n "${COL_POST:-}" ]; then
   check "dọn bài trong bộ sưu tập" "200" "$(code -X DELETE "$API/posts/$COL_POST" -H "$FAUTH")"
+fi
+
+if [ -n "${BOOK_POST:-}" ]; then
+  check "dọn bài dùng cho kiểm thử đã lưu" "200" \
+    "$(code -X DELETE "$API/posts/$BOOK_POST" -H "authorization: Bearer $MOD_TOKEN")"
 fi
 
 if [ -n "${E2E_FAC_ID:-}" ]; then

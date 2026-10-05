@@ -183,11 +183,62 @@ function Get-Raw {
     }
 }
 
+# The notifications pointing at one target.
+#
+# Filtered by target rather than "the newest row": a previous run leaves rows
+# behind, and the next run must not be judged on them.
+function Get-NotifRows {
+    param($Response, [string]$TargetId)
+    if ($null -eq $Response) { return @() }
+    if (-not (@($Response.PSObject.Properties.Name) -contains 'data')) { return @() }
+    $data = @($Response.data)
+    if ($data.Count -eq 0) { return @() }
+    return @($data | Where-Object { $_.targetId -eq $TargetId })
+}
+
+# The saved items pointing at one target. A bookmark nests its target one level
+# deeper, so the id lives at `target.id` rather than `targetId`.
+function Get-SavedRows {
+    param($Response, [string]$TargetId)
+    if ($null -eq $Response) { return @() }
+    if (-not (@($Response.PSObject.Properties.Name) -contains 'data')) { return @() }
+    $data = @($Response.data)
+    if ($data.Count -eq 0) { return @() }
+    return @($data | Where-Object {
+        (@($_.PSObject.Properties.Name) -contains 'target') -and $_.target.id -eq $TargetId
+    })
+}
+
+# What a folder reports, or '' when the folder is absent entirely.
+function Get-FolderTotal {
+    param($Response, [string]$Folder)
+    if ($null -eq $Response) { return '' }
+    if (-not (@($Response.PSObject.Properties.Name) -contains 'data')) { return '' }
+    $data = @($Response.data)
+    if ($data.Count -eq 0) { return '' }
+    $match = @($data | Where-Object { $_.folder -eq $Folder })
+    if ($match.Count -eq 0) { return '' }
+    return [string]$match[0].total
+}
+
+# A field of the first row, or '' when there is no row.
+#
+# StrictMode 2.0 makes a property read on $null a *terminating* error, so
+# `$rows[0].kind` against an empty result aborts the whole run rather than
+# failing one check. Every such read goes through here, and the field is a
+# dotted path so it can reach into `target.owner.displayName`.
+function Get-First {
+    param($Rows, [string]$Path)
+    if (@($Rows).Count -eq 0) { return '' }
+    $row = @($Rows)[0]
+    if ($null -eq $row) { return '' }
+    return Get-Path $row $Path
+}
+
 Write-Host ''
 Write-Host 'TAILIEU TTN - end-to-end'
 Write-Host "target: $BaseUrl"
 Write-Host ''
-
 # `[System.IO.Path]::GetTempPath()` rather than `$env:TEMP`: the environment
 # variable is Windows-only, so a script that reads it dies on the first line of
 # work anywhere else. This project targets Windows Server 2012 R2 in production
@@ -635,9 +686,179 @@ try {
     Check 'khach an danh nhan 404 cho bo suu tap rieng tu' '404' `
         (Get-Status -Uri "$Api/collections/$colPrivId")
 
-    # --- 11. CSRF -------------------------------------------------------------
+    # --- 11. Thong bao --------------------------------------------------------
     Write-Host ''
-    Write-Host '11. Bao ve CSRF'
+    Write-Host '11. Thong bao'
+
+    $notifHeader = $freshHeader
+    $modHeader = @{ Authorization = "Bearer $modToken" }
+
+    # Taken from the sign-in response rather than written here. This script is
+    # deliberately ASCII-only — PowerShell 4.0 on Server 2012 R2 mishandles a
+    # non-ASCII source file — so a Vietnamese display name cannot be spelled in
+    # it. Comparing against the server's own value is also the stronger check:
+    # it fails if the notification names the wrong account, which a hardcoded
+    # string would too, but it cannot rot when somebody renames the seed user.
+    $modName = Get-Path $modLogin 'data.user.displayName'
+    $stuName = Get-Path $freshLogin 'data.user.displayName'
+
+    # A delta, not an absolute number: the badge is a denormalised column, and
+    # previous runs leave rows behind. An absolute number would fail on the
+    # second run for a reason that has nothing to do with notifications.
+    $unreadBefore = Get-Path (Get-Json -Uri "$Api/notifications/unread-count" -Headers $notifHeader) 'data.unread'
+
+    # Somebody ELSE acts on the student's post. Their own action must not notify
+    # them, which is exactly why this is a different account.
+    $notifCommentBody = @{
+        targetType = 'post'
+        targetId   = $postId
+        body       = 'E2E- binh luan cua kiem duyet vien'
+    } | ConvertTo-Json
+    $notifCommentId = Get-Path (Get-Json -Uri "$Api/comments" -Method 'POST' -Body $notifCommentBody -Headers $modHeader) 'data.id'
+    Check 'kiem duyet vien binh luan duoc' 'yes' $(if ($notifCommentId) { 'yes' } else { 'no' })
+
+    $unreadAfter = Get-Path (Get-Json -Uri "$Api/notifications/unread-count" -Headers $notifHeader) 'data.unread'
+    Check 'badge chua doc tang dung 1' ([string]([int]$unreadBefore + 1)) $unreadAfter
+
+    # The regression this section exists for: `post_comment` and `comment_reply`
+    # were declared in the database enum and in the TypeScript union, but nothing
+    # ever emitted them. Likes and follows notified correctly, so the feature
+    # looked finished while a reply told nobody.
+    $notifs = Get-Json -Uri "$Api/notifications?limit=50" -Headers $notifHeader
+    $notifRows = Get-NotifRows -Response $notifs -TargetId $postId
+    Check 'sinh vien nhan dung 1 thong bao cho bai nay' '1' ([string]@($notifRows).Count)
+    Check 'dung loai thong bao' 'post_comment' (Get-First $notifRows 'kind')
+    Check 'neu ten nguoi da tac dong' $modName (Get-First $notifRows 'actorName')
+    # The notification must name the person who acted, not the post's owner.
+    Check 'khong phai ten chu bai' 'no' `
+        $(if ((Get-First $notifRows 'actorName') -eq $stuName) { 'yes' } else { 'no' })
+    # '' is how a JSON null arrives through Get-Path.
+    Check 'thong bao con chua doc' '' (Get-First $notifRows 'readAt')
+
+    # A reply notifies the person replied to — not the post author as well,
+    # which would be the same fact told twice and would bury them.
+    $notifReplyBody = @{
+        targetType      = 'post'
+        targetId        = $postId
+        body            = 'E2E- tra loi cua sinh vien'
+        parentCommentId = $notifCommentId
+    } | ConvertTo-Json
+    $notifReplyId = Get-Path (Get-Json -Uri "$Api/comments" -Method 'POST' -Body $notifReplyBody -Headers $notifHeader) 'data.id'
+    Check 'sinh vien tra loi duoc' 'yes' $(if ($notifReplyId) { 'yes' } else { 'no' })
+
+    $modNotifs = Get-Json -Uri "$Api/notifications?limit=50" -Headers $modHeader
+    $modNotifRows = Get-NotifRows -Response $modNotifs -TargetId $postId
+    Check 'nguoi duoc tra loi nhan thong bao' '1' ([string]@($modNotifRows).Count)
+    Check 'dung loai thong bao tra loi' 'comment_reply' (Get-First $modNotifRows 'kind')
+    # A comment has no page of its own, so a notification targeting one would be
+    # a link to nowhere. It points at the thread instead.
+    Check 'tra loi tro toi bai viet, khong phai binh luan' 'post' (Get-First $modNotifRows 'targetType')
+
+    # The list carries actor identity and nothing else — no snapshot of the
+    # target's title, which would keep announcing something the reader may have
+    # lost access to.
+    $notifRaw = Get-Raw -Uri "$Api/notifications?limit=50" -Headers $notifHeader
+    Check 'payload khong chua noi dung muc tieu' 'no' `
+        $(if ($notifRaw -match 'bai kiem thu luong binh luan') { 'yes' } else { 'no' })
+
+    # Aggregation: a second comment on the same post collapses into the existing
+    # unread row, so the badge must not move again.
+    $unreadAgg = Get-Path (Get-Json -Uri "$Api/notifications/unread-count" -Headers $notifHeader) 'data.unread'
+    $secondCommentBody = @{ targetType = 'post'; targetId = $postId; body = 'E2E- binh luan thu hai' } | ConvertTo-Json
+    Get-Json -Uri "$Api/comments" -Method 'POST' -Body $secondCommentBody -Headers $modHeader | Out-Null
+    Check 'binh luan thu hai khong dem them vao badge' $unreadAgg `
+        (Get-Path (Get-Json -Uri "$Api/notifications/unread-count" -Headers $notifHeader) 'data.unread')
+    $notifsAgain = Get-Json -Uri "$Api/notifications?limit=50" -Headers $notifHeader
+    Check 'van chi mot dong cho bai nay' '1' `
+        ([string]@(Get-NotifRows -Response $notifsAgain -TargetId $postId).Count)
+
+    Check 'danh dau tat ca da doc' '200' `
+        (Get-Status -Uri "$Api/notifications/read-all" -Method 'POST' -Headers $notifHeader)
+    Check 'badge ve 0 sau khi doc het' '0' `
+        (Get-Path (Get-Json -Uri "$Api/notifications/unread-count" -Headers $notifHeader) 'data.unread')
+
+    # --- 12. Da luu -----------------------------------------------------------
+    Write-Host ''
+    Write-Host '12. Da luu'
+
+    # Owned by the moderator, so the student's access to it can actually be
+    # withdrawn. A user always sees their own private content, so hiding the
+    # student's own post would prove nothing at all.
+    $bookPostBody = @{
+        body       = 'E2E- bai de kiem thu da luu'
+        visibility = 'public'
+        postKind   = 'status'
+        tags       = @()
+    } | ConvertTo-Json
+    $bookPostId = Get-Path (Get-Json -Uri "$Api/posts" -Method 'POST' -Body $bookPostBody -Headers $modHeader) 'data.id'
+    Check 'kiem duyet vien tao bai cong khai' 'yes' $(if ($bookPostId) { 'yes' } else { 'no' })
+
+    $bookFolder = 'E2E-On thi'
+    $bookBody = @{ bookmarked = $true; folder = $bookFolder } | ConvertTo-Json
+    Check 'luu kem thu muc' 'True' `
+        (Get-Path (Get-Json -Uri "$Api/bookmarks/post/$bookPostId" -Method 'PUT' -Body $bookBody -Headers $notifHeader) 'data.bookmarked')
+
+    # The list used to come back as bare pointers — `{targetType, targetId}` and
+    # nothing else. Safe, because the visibility filter ran, but not renderable:
+    # no title, no owner, nothing a page could draw.
+    $saved = Get-Json -Uri "$Api/bookmarks?limit=50" -Headers $notifHeader
+    $savedRows = Get-SavedRows -Response $saved -TargetId $bookPostId
+    Check 'danh sach tra ve tieu de that' 'E2E- bai de kiem thu da luu' (Get-First $savedRows 'target.title')
+    Check 'danh sach tra ve ten chu so huu' $modName (Get-First $savedRows 'target.owner.displayName')
+    Check 'thu muc duoc ghi lai' $bookFolder (Get-First $savedRows 'folder')
+    Check 'bo dem thu muc khop danh sach' '1' `
+        (Get-FolderTotal (Get-Json -Uri "$Api/bookmarks/folders" -Headers $notifHeader) $bookFolder)
+
+    # The author withdraws it. The bookmark outlives the reader's access to what
+    # it points at, and nothing but a re-check at read time stops the list from
+    # printing a title the reader may no longer open.
+    Check 'tac gia chuyen bai sang rieng tu' '200' `
+        (Get-Status -Uri "$Api/posts/$bookPostId" -Method 'PATCH' -Headers $modHeader `
+            -Body (@{ visibility = 'private' } | ConvertTo-Json))
+
+    $savedAfter = Get-Json -Uri "$Api/bookmarks?limit=50" -Headers $notifHeader
+    Check 'muc da luu bien mat khoi danh sach' '0' `
+        ([string]@(Get-SavedRows -Response $savedAfter -TargetId $bookPostId).Count)
+    $savedRaw = Get-Raw -Uri "$Api/bookmarks?limit=50" -Headers $notifHeader
+    Check 'khong ro tieu de trong body' 'no' `
+        $(if ($savedRaw -match 'bai de kiem thu da luu') { 'yes' } else { 'no' })
+    Check 'khong ro id trong body' 'no' `
+        $(if ($savedRaw -match $bookPostId) { 'yes' } else { 'no' })
+    # A folder advertising a row the list will not show is the same defect as a
+    # comment count that disagreed with its thread.
+    Check 'bo dem thu muc cung bien mat' '' `
+        (Get-FolderTotal (Get-Json -Uri "$Api/bookmarks/folders" -Headers $notifHeader) $bookFolder)
+
+    # `folder` is three-valued, and the three cases must stay distinguishable.
+    # Collapsing "omitted" into "null" — the obvious `.nullish()` — makes a
+    # folder impossible to remove once set, because the two opposite requests
+    # become byte-identical.
+    Get-Json -Uri "$Api/posts/$bookPostId" -Method 'PATCH' -Headers $modHeader `
+        -Body (@{ visibility = 'public' } | ConvertTo-Json) | Out-Null
+    $refileBody = @{ bookmarked = $true; folder = $bookFolder } | ConvertTo-Json
+    Get-Json -Uri "$Api/bookmarks/post/$bookPostId" -Method 'PUT' -Body $refileBody -Headers $notifHeader | Out-Null
+    # An explicit null, which is the request that means "take it out".
+    Get-Json -Uri "$Api/bookmarks/post/$bookPostId" -Method 'PUT' `
+        -Body '{"bookmarked":true,"folder":null}' -Headers $notifHeader | Out-Null
+    $cleared = Get-SavedRows -Response (Get-Json -Uri "$Api/bookmarks?limit=50" -Headers $notifHeader) -TargetId $bookPostId
+    Check 'gui null thi bo khoi thu muc' '' (Get-First $cleared 'folder')
+    Check 'van con trong danh sach da luu' '1' ([string]@($cleared).Count)
+
+    $refileAgain = @{ bookmarked = $true; folder = $bookFolder } | ConvertTo-Json
+    Get-Json -Uri "$Api/bookmarks/post/$bookPostId" -Method 'PUT' -Body $refileAgain -Headers $notifHeader | Out-Null
+    # What the Luu button on a detail page sends: no folder key at all.
+    Get-Json -Uri "$Api/bookmarks/post/$bookPostId" -Method 'PUT' `
+        -Body '{"bookmarked":true}' -Headers $notifHeader | Out-Null
+    $kept = Get-SavedRows -Response (Get-Json -Uri "$Api/bookmarks?limit=50" -Headers $notifHeader) -TargetId $bookPostId
+    Check 'bo trong truong thu muc thi giu nguyen' $bookFolder (Get-First $kept 'folder')
+
+    Check 'bo luu duoc' 'False' `
+        (Get-Path (Get-Json -Uri "$Api/bookmarks/post/$bookPostId" -Method 'PUT' `
+            -Body '{"bookmarked":false}' -Headers $notifHeader) 'data.bookmarked')
+
+    # --- 13. CSRF -------------------------------------------------------------
+    Write-Host ''
+    Write-Host '13. Bao ve CSRF'
 
     Check 'thieu header CSRF thi 403' '403' `
         (Get-Status -Uri "$Api/auth/logout" -Method 'POST' -Session $session -Headers $authHeader)
@@ -660,9 +881,9 @@ try {
     $afterLogout = Get-Status -Uri "$Api/auth/me" -Headers $authHeader
     Check 'token chet sau khi dang xuat' '401' $afterLogout
 
-    # --- 12. Cleanup ----------------------------------------------------------
+    # --- 14. Cleanup ----------------------------------------------------------
     Write-Host ''
-    Write-Host '12. Don dep'
+    Write-Host '14. Don dep'
 
     # Leave no trace. A test that creates rows and abandons them makes the next
     # run's assertions drift, and the drift looks like a product bug.
@@ -686,6 +907,11 @@ try {
     if ($colPostId) {
         Check 'don bai trong bo suu tap' '200' `
             (Get-Status -Uri "$Api/posts/$colPostId" -Method 'DELETE' -Headers $freshHeader)
+    }
+
+    if ($bookPostId) {
+        Check 'don bai dung cho kiem thu da luu' '200' `
+            (Get-Status -Uri "$Api/posts/$bookPostId" -Method 'DELETE' -Headers $modHeader)
     }
 
     if ($postId) {
