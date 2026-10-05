@@ -162,6 +162,11 @@ hơn nhiều.
 
 ## 3. Cloudflare Tunnel
 
+> Phần này viết cho **Linux**. Nếu máy chủ API chạy Windows Server 2012 R2, dùng
+> [SETUP_WINDOWS_PAGES.md](SETUP_WINDOWS_PAGES.md) phần A4 — các lệnh ở đây
+> (`dpkg`, `/etc/cloudflared`, `systemctl`) không dùng được ở đó, và
+> `cloudflared service install` trên Windows còn có một cái bẫy riêng.
+
 ### Cài đặt
 
 ```bash

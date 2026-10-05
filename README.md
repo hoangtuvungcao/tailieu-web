@@ -168,11 +168,15 @@ npm test
 
 Hướng dẫn đầy đủ: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
 
-> **Máy chủ Windows Server 2012 R2?** Đọc **[docs/WINDOWS.md](docs/WINDOWS.md)**
-> trước. Docker **không chạy được** trên 2012 R2 (container Windows cần Server
-> 2016 trở lên), nên ngăn xếp phải chạy như Windows service native — và Node 20
-> nằm ngoài hỗ trợ trên hệ điều hành đó. Tài liệu giải thích cả hai rủi ro và
-> cách xử lý.
+> **Backend trên Windows Server 2012 R2 + frontend trên Cloudflare Pages?** Đọc
+> **[docs/SETUP_WINDOWS_PAGES.md](docs/SETUP_WINDOWS_PAGES.md)** — một hướng dẫn
+> duy nhất đi từ máy chủ trống tới website đang chạy, theo đúng thứ tự thao tác.
+>
+> Docker **không chạy được** trên 2012 R2 (container Windows cần Server 2016 trở
+> lên), nên ngăn xếp phải chạy như Windows service native — và Node 20 nằm ngoài
+> hỗ trợ trên hệ điều hành đó. Cả hai rủi ro được nói rõ trong tài liệu đó và trong
+> [docs/WINDOWS.md](docs/WINDOWS.md), nơi đi sâu vào vì sao mọi thứ làm theo cách
+> này.
 
 Tóm tắt:
 
@@ -200,6 +204,7 @@ Biến môi trường bắt buộc cho Pages: `API_ORIGIN` (hostname tunnel).
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Triển khai, sao lưu, xử lý sự cố | ✅ |
 | [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Quy ước mã nguồn, test, commit | ✅ |
 | [WINDOWS.md](docs/WINDOWS.md) | Triển khai trên Windows Server 2012 R2 (không Docker) | ✅ |
+| [SETUP_WINDOWS_PAGES.md](docs/SETUP_WINDOWS_PAGES.md) | Hướng dẫn từng bước: backend trên Windows Server 2012 R2, frontend trên Cloudflare Pages | ✅ |
 | [ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) | Vận hành hằng ngày, phân quyền, xử lý sự cố | ✅ |
 | [USER_GUIDE.md](docs/USER_GUIDE.md) | Dành cho sinh viên và giảng viên | ✅ |
 | [ENVIRONMENT.md](docs/ENVIRONMENT.md) | Biến môi trường: cái nào quan trọng, sai thì hỏng gì | ✅ |
