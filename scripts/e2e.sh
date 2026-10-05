@@ -215,21 +215,51 @@ check "sai mật khẩu thì 401" "401" \
 echo
 echo "5. Tải lên chia phần"
 # Tệp PDF hợp lệ, đủ lớn để kiểm tra nhiều phần ở chế độ chunk nhỏ.
+#
+# "Hợp lệ" ở đây có nghĩa là MỞ ĐƯỢC, không chỉ là có đúng magic bytes. Bản
+# trước chỉ có header, vài object và một trailer — đủ để qua bước kiểm tra
+# chữ ký tệp, nhưng PDF.js báo "Invalid PDF structure" khi xem trước, vì nó đọc
+# bảng cross-reference ở CUỐI tệp để tìm object. Thiếu `xref` và `startxref` thì
+# không có gì để đọc.
+#
+# Offset được tính khi nối chuỗi chứ không viết cứng: sửa một dòng phía trên mà
+# quên cập nhật bảng là hỏng lại đúng cái vừa sửa.
 python3 - "$TMP/upload.pdf" <<'PY'
-import sys, zlib
-# A minimal single-page PDF with real content.
-body = b"""%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R>>endobj
-4 0 obj<</Length 44>>stream
-BT /F1 12 Tf 72 720 Td (Bai giang C++) Tj ET
-endstream
-endobj
-trailer<</Root 1 0 R>>
-%%EOF
-"""
-open(sys.argv[1], 'wb').write(body)
+import sys
+
+# Mọi ký tự đều là ASCII, nên độ dài chuỗi bằng số byte — điều kiện để offset
+# tính bằng ký tự vẫn đúng khi ghi ra tệp.
+objects = [
+    b'<< /Type /Catalog /Pages 2 0 R >>',
+    b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] '
+    b'/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    None,  # nội dung trang, dựng ngay dưới đây vì cần /Length
+    b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+]
+text = b'BT /F1 24 Tf 72 700 Td (Bai giang C++ - tai lieu kiem thu) Tj ET'
+objects[3] = b'<< /Length %d >>\nstream\n%s\nendstream' % (len(text), text)
+
+out = bytearray(b'%PDF-1.4\n')
+offsets = []
+for number, body in enumerate(objects, start=1):
+    offsets.append(len(out))
+    out += b'%d 0 obj\n%s\nendobj\n' % (number, body)
+
+# Mỗi dòng xref đúng 20 byte: 10 số offset, space, 5 số thế hệ, space, loại, rồi
+# space + newline. Lệch một byte là cả bảng sai.
+xref_offset = len(out)
+out += b'xref\n0 %d\n' % (len(objects) + 1)
+out += b'0000000000 65535 f \n'
+for offset in offsets:
+    out += b'%010d 00000 n \n' % offset
+
+out += b'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (
+    len(objects) + 1,
+    xref_offset,
+)
+
+open(sys.argv[1], 'wb').write(bytes(out))
 PY
 SIZE=$(stat -c%s "$TMP/upload.pdf")
 
@@ -304,12 +334,67 @@ check "xem trước nhận dạng PDF" "pdf" "$(echo "$PREVIEW" | jget "['data']
 PREVIEW_URL=$(echo "$PREVIEW" | jget "['data']['url']")
 check "xem trước có URL" "yes" "$([ -n "$PREVIEW_URL" ] && echo yes || echo no)"
 
+# URL phải nằm trên chính origin này. Trước đây nó trỏ thẳng tới máy chủ lưu trữ,
+# và trình duyệt coi đó là bên thứ ba: nó phân vùng cookie cho origin ấy, in cảnh
+# báo "Partitioned cookie or storage access was provided", và bỏ qua thuộc tính
+# `download` nên tệp lưu xuống dưới tên UUID thay vì tên người dùng đặt.
+check "URL xem trước cùng origin" "yes" \
+  "$(case "$PREVIEW_URL" in /api/v1/*) echo yes ;; *) echo no ;; esac)"
+
+PSTATUS=$(curl -s -o "$TMP/preview.pdf" -w '%{http_code} %{content_type}' "$BASE$PREVIEW_URL")
+check "URL xem trước phục vụ được" "200 application/pdf" "$PSTATUS"
+
+# Không có Accept-Ranges thì trình xem phải tải xong cả tệp mới hiện được trang
+# đầu — khác biệt giữa một bản xem trước và một lần treo.
+RANGES=$(curl -s -D - -o /dev/null "$BASE$PREVIEW_URL" | grep -i '^accept-ranges:' | tr -d '\r' | awk '{print $2}')
+check "phục vụ theo dải byte" "bytes" "$RANGES"
+
+# Và đây là bản kiểm tra cho lỗi đã báo: "Invalid PDF structure" trong PDF.js.
+# Nguyên nhân là tệp mẫu thiếu bảng cross-reference ở cuối chứ không phải lỗi máy
+# chủ — nhưng một URL xem trước trả 200 vẫn có thể phục vụ một tệp hỏng, nên
+# kiểm tra cấu trúc ở đây giữ cho nó không tái diễn. Đọc theo đúng thứ tự PDF.js
+# đọc: tìm `startxref` ở cuối tệp, rồi tới bảng `xref` mà nó trỏ tới.
+check "cấu trúc PDF đọc được" "ok" "$(python3 - "$TMP/preview.pdf" <<'PY'
+import re, sys
+
+data = open(sys.argv[1], 'rb').read()
+
+if not data.startswith(b'%PDF-'):
+    print('thieu header %PDF-'); raise SystemExit
+if not data.rstrip().endswith(b'%%EOF'):
+    print('thieu %%EOF'); raise SystemExit
+
+trailers = list(re.finditer(rb'startxref\s+(\d+)', data))
+if not trailers:
+    print('thieu startxref'); raise SystemExit
+
+offset = int(trailers[-1].group(1))
+if data[offset:offset + 4] != b'xref':
+    print('startxref tro sai cho: %d' % offset); raise SystemExit
+
+print('ok')
+PY
+)"
+
 DL=$(curl -s "$API/documents/$DOC_ID/download" -H "$AUTH")
 DL_URL=$(echo "$DL" | jget "['data']['url']")
-check "tải xuống trả URL có chữ ký" "yes" "$([ -n "$DL_URL" ] && echo yes || echo no)"
-check "URL hết hạn sau 120s" "120" "$(echo "$DL" | jget "['data']['expiresInSeconds']")"
+check "tải xuống trả URL" "yes" "$([ -n "$DL_URL" ] && echo yes || echo no)"
+# 600, không phải 120: đây là thời hạn của chính media token, và con số trả về
+# phải khớp nó — client tin vào số này để biết khi nào cần lấy URL mới, nên lệch
+# một chút là client đi lấy lại đúng lúc token vừa hết hạn.
+check "URL hết hạn sau 600s" "600" "$(echo "$DL" | jget "['data']['expiresInSeconds']")"
+check "URL tải xuống cùng origin" "yes" \
+  "$(case "$DL_URL" in /api/v1/*) echo yes ;; *) echo no ;; esac)"
 
-curl -s -o "$TMP/downloaded.pdf" "$DL_URL"
+# Chế độ tải xuống phải là `attachment` và mang tên gốc: đó là toàn bộ lý do
+# `mode` tồn tại, và là thứ khiến trình duyệt lưu đúng tên thay vì tên UUID.
+DISPOSITION=$(curl -s -D - -o /dev/null "$BASE$DL_URL" | grep -i '^content-disposition:' | tr -d '\r')
+check "tải xuống là tệp đính kèm" "yes" \
+  "$(case "$DISPOSITION" in *attachment*) echo yes ;; *) echo no ;; esac)"
+check "giữ tên tệp gốc" "yes" \
+  "$(case "$DISPOSITION" in *bai-giang-e2e.pdf*) echo yes ;; *) echo no ;; esac)"
+
+curl -s -o "$TMP/downloaded.pdf" "$BASE$DL_URL"
 check "nội dung tải về khớp bản gốc" "$(sha256sum < "$TMP/upload.pdf" | cut -d' ' -f1)" \
   "$(sha256sum < "$TMP/downloaded.pdf" | cut -d' ' -f1)"
 

@@ -235,6 +235,60 @@ function Get-First {
     return Get-Path $row $Path
 }
 
+# A minimal PDF that a viewer can actually OPEN, not merely one with a valid
+# header. The previous fixture was a header, one object and a trailer — enough
+# for the magic-byte check, and PDF.js answered "Invalid PDF structure" when the
+# preview tried to render it. A reader finds the objects through the
+# cross-reference table at the END of the file, so a file with no `xref` and no
+# `startxref` has nothing to follow.
+function New-MinimalPdf {
+    # The content stream's /Length has to be its byte count, so it is built
+    # first and the object wraps it rather than the other way round.
+    $text = 'BT /F1 24 Tf 72 700 Td (Bai giang C++ - tai lieu kiem thu) Tj ET'
+
+    $objects = @(
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+        "<< /Length $($text.Length) >>`nstream`n$text`nendstream",
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+    )
+
+    # Offsets are measured as the file is assembled. Hard-coding them would mean
+    # that editing any line above silently corrupts the table — which is exactly
+    # the failure this function exists to prevent.
+    #
+    # Every character here is ASCII, so a character offset is a byte offset.
+    # That is why the file is written with the ASCII encoder below and why there
+    # is no binary marker comment: those bytes are not ASCII, and one of them
+    # would put every offset after it out by one.
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append("%PDF-1.4`n")
+
+    $offsets = @()
+    for ($i = 0; $i -lt $objects.Count; $i++) {
+        $offsets += $builder.Length
+        [void]$builder.Append("$($i + 1) 0 obj`n$($objects[$i])`nendobj`n")
+    }
+
+    # Each entry is exactly 20 bytes: ten digits of offset, a space, five digits
+    # of generation, a space, the type, then a space and a newline. One byte out
+    # and the whole table is misread.
+    $entries = "0000000000 65535 f `n"
+    foreach ($offset in $offsets) {
+        $entries += ('{0:D10} 00000 n ' -f $offset) + "`n"
+    }
+
+    $xrefOffset = $builder.Length
+    [void]$builder.Append("xref`n0 $($objects.Count + 1)`n")
+    [void]$builder.Append($entries)
+    [void]$builder.Append(
+        "trailer`n<< /Size $($objects.Count + 1) /Root 1 0 R >>`nstartxref`n$xrefOffset`n%%EOF`n"
+    )
+
+    return [System.Text.Encoding]::ASCII.GetBytes($builder.ToString())
+}
+
 Write-Host ''
 Write-Host 'TAILIEU TTN - end-to-end'
 Write-Host "target: $BaseUrl"
@@ -357,12 +411,9 @@ try {
     Write-Host ''
     Write-Host '5. Tai len chia phan'
 
-    # A minimal valid PDF. Must be a real PDF header — the server validates by
-    # magic bytes and rejects anything else, which is what makes the test below
-    # meaningful.
+    # A minimal PDF that a viewer can actually open — see `New-MinimalPdf`.
     $pdfPath = Join-Path $tempDir 'bai-giang.pdf'
-    $pdfContent = "%PDF-1.4`n1 0 obj<</Type/Catalog>>endobj`ntrailer<</Root 1 0 R>>`n%%EOF`n"
-    [System.IO.File]::WriteAllText($pdfPath, $pdfContent)
+    [System.IO.File]::WriteAllBytes($pdfPath, (New-MinimalPdf))
     $pdfSize = (Get-Item $pdfPath).Length
 
     $intentBody = @{
@@ -485,17 +536,86 @@ try {
 
         $preview = Get-Json -Uri "$Api/documents/$docId/preview" -Session $session -Headers $authHeader
         $previewKind = ''
-        if ($preview) { $previewKind = $preview.data.kind }
+        $previewUrl = $null
+        if ($preview) {
+            $previewKind = $preview.data.kind
+            $previewUrl = $preview.data.url
+        }
         Check 'xem truoc nhan dang PDF' 'pdf' $previewKind
+
+        # The URL must be on this origin. It used to point straight at the
+        # storage host, which the browser treats as a third party: it partitions
+        # storage for that origin, logs "Partitioned cookie or storage access was
+        # provided", and ignores the `download` attribute so the file saves under
+        # its UUID instead of the name the user gave it.
+        $previewSameOrigin = 'no'
+        if ($previewUrl -like '/api/v1/*') { $previewSameOrigin = 'yes' }
+        Check 'URL xem truoc cung origin' 'yes' $previewSameOrigin
+
+        if ($previewUrl) {
+            $previewPath = Join-Path $tempDir 'preview.pdf'
+            $previewResponse = Invoke-WebRequest -Uri "$BaseUrl$previewUrl" -OutFile $previewPath -UseBasicParsing -PassThru
+            Check 'URL xem truoc phuc vu duoc' '200' ([string]$previewResponse.StatusCode)
+
+            # Without Accept-Ranges a viewer downloads the whole file before
+            # rendering page one — the difference between a preview and a stall.
+            $acceptRanges = ''
+            if ($previewResponse.Headers['Accept-Ranges']) {
+                $acceptRanges = [string]$previewResponse.Headers['Accept-Ranges']
+            }
+            Check 'phuc vu theo dai byte' 'bytes' $acceptRanges
+
+            # And this is the check for the reported bug: "Invalid PDF structure"
+            # in PDF.js. The cause was a fixture with no cross-reference table,
+            # not a server fault — but a preview URL that answers 200 can still
+            # serve a broken file, so the structure is asserted here. Read in the
+            # order PDF.js reads it: find `startxref` at the end, then the `xref`
+            # table it points at.
+            $bytes = [System.IO.File]::ReadAllBytes($previewPath)
+            $structure = 'ok'
+            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+
+            if (-not $text.StartsWith('%PDF-')) { $structure = 'thieu header %PDF-' }
+            elseif (-not $text.TrimEnd().EndsWith('%%EOF')) { $structure = 'thieu %%EOF' }
+            else {
+                $matches = [regex]::Matches($text, 'startxref\s+(\d+)')
+                if ($matches.Count -eq 0) { $structure = 'thieu startxref' }
+                else {
+                    $offset = [int]$matches[$matches.Count - 1].Groups[1].Value
+                    $at = [System.Text.Encoding]::ASCII.GetString($bytes, $offset, 4)
+                    if ($at -ne 'xref') { $structure = "startxref tro sai cho: $offset" }
+                }
+            }
+            Check 'cau truc PDF doc duoc' 'ok' $structure
+        }
 
         $download = Get-Json -Uri "$Api/documents/$docId/download" -Session $session -Headers $authHeader
         $downloadUrl = $null
         if ($download) { $downloadUrl = $download.data.url }
-        Check 'tai xuong tra URL co chu ky' 'yes' $(if ($downloadUrl) { 'yes' } else { 'no' })
+        Check 'tai xuong tra URL' 'yes' $(if ($downloadUrl) { 'yes' } else { 'no' })
+
+        $downloadSameOrigin = 'no'
+        if ($downloadUrl -like '/api/v1/*') { $downloadSameOrigin = 'yes' }
+        Check 'URL tai xuong cung origin' 'yes' $downloadSameOrigin
 
         if ($downloadUrl) {
             $downloadedPath = Join-Path $tempDir 'downloaded.pdf'
-            Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadedPath -UseBasicParsing
+            $downloadResponse = Invoke-WebRequest -Uri "$BaseUrl$downloadUrl" -OutFile $downloadedPath -UseBasicParsing -PassThru
+
+            # `attachment` under the original name is the whole reason `mode`
+            # exists: it is what makes the browser save the file as the uploader
+            # named it rather than as its UUID storage key.
+            $disposition = ''
+            if ($downloadResponse.Headers['Content-Disposition']) {
+                $disposition = [string]$downloadResponse.Headers['Content-Disposition']
+            }
+            $isAttachment = 'no'
+            if ($disposition -like '*attachment*') { $isAttachment = 'yes' }
+            Check 'tai xuong la tep dinh kem' 'yes' $isAttachment
+
+            $keepsName = 'no'
+            if ($disposition -like '*bai-giang-e2e.pdf*') { $keepsName = 'yes' }
+            Check 'giu ten tep goc' 'yes' $keepsName
 
             $originalHash = (Get-FileHash $pdfPath -Algorithm SHA256).Hash
             $downloadedHash = (Get-FileHash $downloadedPath -Algorithm SHA256).Hash
