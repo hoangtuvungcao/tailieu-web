@@ -338,7 +338,13 @@ export function AdminStoragePage() {
                   >
                     <code className="truncate">{object.objectKey}</code>
                     <div className="ml-3 flex shrink-0 items-center gap-2">
-                      <Badge variant="outline">{object.mimeType}</Badge>
+                      {/* Hidden on phones. A MIME type runs to 70 characters
+                          ("application/vnd.openxmlformats-officedocument…"),
+                          which is wider than the whole card — and it is the
+                          least useful thing in this row. Shown from `sm`. */}
+                      <Badge variant="outline" className="hidden sm:inline-flex">
+                        {object.mimeType}
+                      </Badge>
                       <span className="tabular-nums">{formatBytes(object.sizeBytes)}</span>
                     </div>
                   </div>
@@ -348,7 +354,7 @@ export function AdminStoragePage() {
           </Card>
 
           {query.data.orphaned > 0 ? (
-            <div className="rounded-lg border border-[var(--color-gold-300)] bg-[var(--color-gold-50)] p-4 text-sm">
+            <div className="rounded-lg border border-[var(--color-gold-300)] bg-[var(--color-gold-50)] p-4 text-sm text-[var(--color-gold-700)]">
               <p className="flex items-start gap-2">
                 <HardDrive className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <span>

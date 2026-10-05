@@ -88,7 +88,15 @@ export function DocumentCard({
   return (
     <article
       className={cn(
-        'group flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4',
+        // `min-w-0` is load-bearing, not tidying. The card is a grid item, and a
+        // grid item defaults to `min-width: auto` — i.e. it refuses to be
+        // narrower than its own min-content. The truncated subtitle below is
+        // `white-space: nowrap`, so its min-content is the full untruncated
+        // string (~280px). Without this the column is forced open and every
+        // card silently overflows the page on a phone: measured at 366px inside
+        // a 328px column. The `min-w-0` on the flex child further down handles
+        // the flex case; this handles the grid case, and both are needed.
+        'group flex min-w-0 flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4',
         'transition-shadow hover:[box-shadow:var(--shadow-lifted)]',
         className,
       )}

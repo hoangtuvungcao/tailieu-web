@@ -206,7 +206,10 @@ export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElemen
 // =============================================================================
 
 const badgeVariants = cva(
-  'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+  // `whitespace-nowrap`: a badge is a label, not prose. "Quản trị" broke onto
+  // two lines in the header chip as soon as the row got tight, which turns a
+  // role marker into a tall yellow blob.
+  'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium',
   {
     variants: {
       variant: {

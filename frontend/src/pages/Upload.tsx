@@ -239,7 +239,7 @@ export function UploadPage() {
           className={cn(
             'mt-6 rounded-lg border-2 border-dashed p-12 text-center transition-colors',
             dragging
-              ? 'border-[var(--color-brand-500)] bg-[var(--color-brand-50)]'
+              ? 'border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-800)]'
               : 'border-[var(--color-border)]',
           )}
         >

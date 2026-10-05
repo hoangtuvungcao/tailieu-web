@@ -92,7 +92,31 @@ const NAV_ITEMS = [
  */
 function desktopNavClass({ isActive }: { isActive: boolean }): string {
   return cn(
-    'rounded-md px-3 py-2 text-sm font-medium transition-colors',
+    // `whitespace-nowrap`: without it a squeezed nav wraps "Bộ sưu tập" onto two
+    // lines and the header grows to match — which is what it did at every width
+    // from 768px to 1920px, because the nav was the flex item that gave way.
+    // The nav now refuses to shrink instead, and the breakpoint moves to `lg`
+    // where the whole row genuinely fits.
+    // `px-2 xl:px-3`: at exactly 1024px the row is ~50px too wide with the
+    // roomier padding, and a horizontal scrollbar on the header is worse than
+    // slightly tighter links. The padding returns once there is room.
+    'whitespace-nowrap rounded-md px-2 py-2 text-sm font-medium transition-colors xl:px-3',
+    isActive
+      ? 'bg-[var(--color-secondary)] text-[var(--color-foreground)]'
+      : 'text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]',
+  );
+}
+
+/**
+ * Mobile drawer entry.
+ *
+ * Taller than the desktop link because this one is tapped, not clicked: 44px is
+ * the smallest target a thumb hits reliably. `whitespace-nowrap` for the same
+ * reason as the desktop nav — "Bộ sưu tập" must not become two lines.
+ */
+function mobileNavClass({ isActive }: { isActive: boolean }): string {
+  return cn(
+    'flex min-h-11 items-center gap-3 whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors',
     isActive
       ? 'bg-[var(--color-secondary)] text-[var(--color-foreground)]'
       : 'text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]',
@@ -175,7 +199,7 @@ function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-background)]/85 backdrop-blur">
-      <div className="container-page flex h-16 items-center gap-4">
+      <div className="container-page flex h-16 items-center gap-3 xl:gap-4">
         <Link to="/" className="flex shrink-0 items-center gap-2">
           {/* A secondary mark, deliberately not the official university logo —
               an invented symbol avoids misrepresenting an official emblem. */}
@@ -193,7 +217,10 @@ function Header() {
           </span>
         </Link>
 
-        <nav aria-label="Điều hướng chính" className="hidden items-center gap-1 md:flex">
+        <nav
+          aria-label="Điều hướng chính"
+          className="hidden shrink-0 items-center gap-0.5 lg:flex xl:gap-1"
+        >
           {NAV_ITEMS.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className={desktopNavClass}>
               {item.label}
@@ -214,7 +241,11 @@ function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <Link to="/documents" className="hidden sm:block">
+          {/* Shown only at `2xl`: this is a shortcut to `/documents`, which the
+              nav beside it already links to, and it costs ~120px of a row that
+              is tight until the container hits its 1280px cap. The account name
+              is worth more here than a duplicate destination. */}
+          <Link to="/documents" className="hidden 2xl:block">
             <Button variant="outline" size="sm" className="gap-2">
               <Search className="h-4 w-4" />
               Tìm kiếm
@@ -236,7 +267,13 @@ function Header() {
               </Link>
               <div className="hidden items-center gap-2 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 sm:flex">
                 <UserIcon className="h-4 w-4 text-[var(--color-muted-foreground)]" />
-                <span className="max-w-32 truncate text-sm">{user.displayName}</span>
+                {/* The name is the widest thing in the header and the least
+                    load-bearing: the icon still identifies the menu, and the
+                    role badge still says who you are. It appears at `xl`, where
+                    there is room for it. */}
+                <span className="hidden max-w-32 truncate text-sm xl:inline">
+                  {user.displayName}
+                </span>
                 {user.roles.includes('admin') ||
                 user.roles.includes('super_admin') ||
                 user.roles.includes('moderator') ||
@@ -274,7 +311,7 @@ function Header() {
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden"
+            className="lg:hidden"
             onClick={() => setMobileOpen((open) => !open)}
             aria-label={mobileOpen ? 'Đóng menu' : 'Mở menu'}
             aria-expanded={mobileOpen}
@@ -285,56 +322,63 @@ function Header() {
       </div>
 
       {mobileOpen ? (
-        <nav
-          aria-label="Điều hướng di động"
-          className="border-t border-[var(--color-border)] bg-[var(--color-background)] md:hidden"
-        >
-          <div className="container-page flex flex-col py-2">
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium',
-                    isActive
-                      ? 'bg-[var(--color-secondary)]'
-                      : 'text-[var(--color-muted-foreground)]',
-                  )
-                }
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
+        <>
+          {/* Dims the page so the drawer reads as a layer above it rather than
+              the page having reflowed. It is also the tap target that closes
+              the menu, which is otherwise only possible via the toggle.
+
+              `absolute`, not `fixed`: the header carries `backdrop-blur`, and a
+              `backdrop-filter` makes an element the containing block for its
+              fixed descendants. A `fixed` backdrop here would have been sized
+              to the 64px header and never seen — measured, then fixed. */}
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-x-0 top-full z-30 h-[100dvh] bg-black/40 lg:hidden"
+          />
+
+          <nav
+            aria-label="Điều hướng di động"
+            // `top-full` hangs it off the header bar. The header is `sticky`,
+            // which counts as positioned, so it is the containing block.
+            //
+            // Capped and scrollable: a long list on a short screen would
+            // otherwise put the last entries somewhere unreachable.
+            className="absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-4rem)] overflow-y-auto border-t border-[var(--color-border)] bg-[var(--color-background)] shadow-[var(--shadow-lifted)] lg:hidden"
+          >
+            <div className="container-page flex flex-col gap-0.5 py-3">
+              {NAV_ITEMS.map((item) => (
+                <NavLink key={item.to} to={item.to} end={item.end} className={mobileNavClass}>
+                  <item.icon className="h-4 w-4" aria-hidden />
+                  {item.label}
+                </NavLink>
+              ))}
+
+              {isAuthenticated ? (
+                <>
+                  <NavLink to="/upload" className={mobileNavClass}>
+                    <Upload className="h-4 w-4" aria-hidden />
+                    Tải lên
+                  </NavLink>
+                  <NavLink to="/bookmarks" className={mobileNavClass}>
+                    <BookmarkIcon className="h-4 w-4" aria-hidden />
+                    Đã lưu
+                  </NavLink>
+                </>
+              ) : null}
+
+              {/* Set apart: every other entry above is a primary destination,
+                  and a ranking is not one of them. */}
+              <div className="my-1 border-t border-[var(--color-border)]" aria-hidden />
+              <NavLink to="/leaderboards" className={mobileNavClass}>
+                <Trophy className="h-4 w-4" aria-hidden />
+                Xếp hạng
               </NavLink>
-            ))}
-            {isAuthenticated ? (
-              <>
-                <NavLink
-                  to="/upload"
-                  className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-muted-foreground)]"
-                >
-                  <Upload className="h-4 w-4" />
-                  Tải lên
-                </NavLink>
-                <NavLink
-                  to="/bookmarks"
-                  className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-muted-foreground)]"
-                >
-                  <BookmarkIcon className="h-4 w-4" />
-                  Đã lưu
-                </NavLink>
-              </>
-            ) : null}
-            <NavLink
-              to="/leaderboards"
-              className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-muted-foreground)]"
-            >
-              <Trophy className="h-4 w-4" />
-              Xếp hạng
-            </NavLink>
-          </div>
-        </nav>
+            </div>
+          </nav>
+        </>
       ) : null}
     </header>
   );
@@ -384,7 +428,7 @@ function MobileNav() {
             end={item.end}
             className={({ isActive }) =>
               cn(
-                'flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium',
+                'flex flex-1 flex-col items-center gap-1 whitespace-nowrap py-2.5 text-[11px] font-medium',
                 isActive
                   ? 'text-[var(--color-primary)]'
                   : 'text-[var(--color-muted-foreground)]',
@@ -401,7 +445,7 @@ function MobileNav() {
             to="/upload"
             className={({ isActive }) =>
               cn(
-                'flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium',
+                'flex flex-1 flex-col items-center gap-1 whitespace-nowrap py-2.5 text-[11px] font-medium',
                 isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted-foreground)]',
               )
             }
@@ -414,7 +458,7 @@ function MobileNav() {
             to="/login"
             className={({ isActive }) =>
               cn(
-                'flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium',
+                'flex flex-1 flex-col items-center gap-1 whitespace-nowrap py-2.5 text-[11px] font-medium',
                 isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted-foreground)]',
               )
             }
