@@ -57,12 +57,23 @@ export function LogoMark({
  * The subtitle is hidden below `sm` because at 360px the wordmark and the
  * account button already compete for the same row, and the university name is
  * the part that can wait.
+ *
+ * `wordmarkClassName` lets a caller hide the wordmark too, without this
+ * component deciding for every caller. The header uses it below 360px, where
+ * the mark plus the account controls no longer fit; the footer, which stacks
+ * instead of sharing a row, does not need to.
  */
-export function Logo({ className }: { className?: string }) {
+export function Logo({
+  className,
+  wordmarkClassName,
+}: {
+  className?: string;
+  wordmarkClassName?: string;
+}) {
   return (
     <span className={cn('flex items-center gap-2', className)}>
       <LogoMark decorative />
-      <span className="flex flex-col leading-none">
+      <span className={cn('flex flex-col leading-none', wordmarkClassName)}>
         <span className="text-sm font-bold tracking-tight">TAILIEU TTN</span>
         <span className="hidden text-[11px] text-[var(--color-muted-foreground)] sm:block">
           Đại học Tây Nguyên

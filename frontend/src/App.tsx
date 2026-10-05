@@ -213,8 +213,15 @@ function Header() {
       <div className="container-page flex h-16 items-center gap-3 xl:gap-4">
         <Link to="/" className="flex shrink-0 items-center gap-2">
           {/* The product's own mark, not the university's official emblem — an
-              invented symbol avoids misrepresenting an official crest. */}
-          <Logo />
+              invented symbol avoids misrepresenting an official crest.
+
+              The wordmark drops out below 360px, where the mark, the bell, the
+              theme toggle and the account control come to 336px in a 320px
+              viewport. It is the same trade the Logo makes for the university
+              name below `sm`, one step further: the mark still identifies the
+              site and it links home, so nothing is lost but a repeated label.
+              The next common width up is 360, where the row fits again. */}
+          <Logo wordmarkClassName="max-[359px]:hidden" />
         </Link>
 
         <nav

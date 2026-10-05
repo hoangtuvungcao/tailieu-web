@@ -250,7 +250,22 @@ export function DocumentDetailPage() {
         </div>
 
         {/* --- Sidebar ------------------------------------------------------ */}
-        <aside className="space-y-4">
+        {/*
+          `min-w-0` is load-bearing, not tidiness. This is a grid item, and a
+          grid item defaults to `min-width: auto`, which resolves to its
+          content-based minimum — and the filename below is `truncate`, so its
+          min-content width is the whole filename, unwrapped. The single-column
+          grid track is `auto` and sizes to the largest minimum contribution, so
+          one long filename pushed the column to ~520px inside a 360px phone.
+          Both grid items stretched to that width, the heading wrapped at 520px
+          and painted off-screen, and the page scrolled sideways.
+
+          The `min-w-0` already on the main column does not help: it lowers that
+          item's own contribution, but the track was already being held open by
+          this one. Truncation only works once the box is allowed to be narrower
+          than the text it is truncating.
+        */}
+        <aside className="min-w-0 space-y-4">
           <Card>
             <CardContent className="space-y-3 p-5">
               {primaryFile ? (
