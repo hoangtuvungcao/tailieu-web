@@ -55,6 +55,18 @@ function fail(code: string, message = 'failed', status = 400) {
   return { body: { success: false, error: { code, message } }, status };
 }
 
+/**
+ * Establish the cookie the client reads to decide whether it has a session.
+ *
+ * `refreshSession` does not ask the server when this cookie is absent, since
+ * that request could only ever be refused — see the test that pins that
+ * behaviour. So every test exercising a refresh has to look signed in first,
+ * exactly as a browser would after signing in.
+ */
+function signIn() {
+  document.cookie = 'csrf=csrf-value-123; path=/';
+}
+
 beforeEach(() => {
   calls = [];
   globalThis.fetch = vi.fn();
@@ -173,11 +185,23 @@ describe('response envelope', () => {
 });
 
 describe('single-flight refresh', () => {
+  it('does not ask the server when there is no session cookie', async () => {
+    // The bootstrap runs on every page load for every visitor. Asking anyway
+    // means an anonymous visitor — and on a public document library that is
+    // most of them, crawlers included — makes a request that can only be
+    // refused, and the browser logs that failure in the console on every page.
+    respondWith(ok({ accessToken: 'unused' }));
+
+    await expect(refreshSession()).resolves.toBe(false);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it('collapses concurrent refreshes into ONE request', async () => {
     // THE critical assertion. Five simultaneous callers must produce one
     // refresh. Five refreshes would present four already-rotated tokens, which
     // the server reads as theft and answers by revoking the whole family —
     // signing the user out through no fault of the backend.
+    signIn();
     let resolveRefresh: ((value: Response) => void) | undefined;
 
     vi.mocked(globalThis.fetch).mockImplementation(
@@ -210,6 +234,7 @@ describe('single-flight refresh', () => {
   });
 
   it('allows a new refresh after the previous one settles', async () => {
+    signIn();
     respondWith(ok({ accessToken: 'first' }));
     expect(await refreshSession()).toBe(true);
 
@@ -223,6 +248,7 @@ describe('single-flight refresh', () => {
     // Callers need a boolean to decide whether to retry. An exception here
     // would surface as an unhandled rejection in whichever component lost the
     // race.
+    signIn();
     respondWith(fail('AUTH_REFRESH_EXPIRED', 'expired', 401).body, { status: 401 });
 
     await expect(refreshSession()).resolves.toBe(false);
@@ -232,6 +258,7 @@ describe('single-flight refresh', () => {
     // Two tabs refreshing at once. The server says "retry" rather than "you
     // are a thief", and the retry carries the successor cookie the other tab
     // already stored.
+    signIn();
     respondWith(fail('AUTH_REFRESH_RACE', 'race', 409).body, { status: 409 });
     respondWith(ok({ accessToken: 'after-race' }));
 
@@ -242,6 +269,7 @@ describe('single-flight refresh', () => {
 
 describe('automatic retry after expiry', () => {
   it('refreshes and replays the request on a 401', async () => {
+    signIn();
     setAccessToken('stale');
     respondWith(fail('AUTH_TOKEN_EXPIRED', 'expired', 401).body, { status: 401 }); // original
     respondWith(ok({ accessToken: 'fresh' })); // refresh
@@ -254,6 +282,7 @@ describe('automatic retry after expiry', () => {
   });
 
   it('does not loop when the replay also fails', async () => {
+    signIn();
     setAccessToken('stale');
     respondWith(fail('AUTH_TOKEN_EXPIRED', 'expired', 401).body, { status: 401 }); // original
     respondWith(ok({ accessToken: 'fresh' })); // refresh succeeds
@@ -265,6 +294,7 @@ describe('automatic retry after expiry', () => {
   });
 
   it('notifies the app when the session is revoked', async () => {
+    signIn();
     setAccessToken('stale');
     const lost = vi.fn();
     onAuthenticationLost(lost);

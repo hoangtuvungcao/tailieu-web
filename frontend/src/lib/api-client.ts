@@ -131,6 +131,23 @@ async function rawRequest(path: string, options: RequestOptions): Promise<Respon
 }
 
 /**
+ * Whether the browser is carrying a session cookie at all.
+ *
+ * `csrf` is the only auth cookie JavaScript may read — it exists precisely so
+ * the client can echo it back — and the API sets it on sign-in and clears it
+ * on sign-out. So its absence is a reliable "nobody is signed in here".
+ *
+ * This is worth a function because the bootstrap runs on every page load for
+ * every visitor. Without it, an anonymous visitor — and on a public document
+ * library that is most of them, crawlers included — makes a request that can
+ * only ever be refused, and the browser logs the failure in the console on
+ * every single page. Do not ask a question whose answer is already known.
+ */
+function hasSession(): boolean {
+  return readCookie('csrf') !== null;
+}
+
+/**
  * Perform the refresh exchange itself.
  *
  * Deliberately NOT the exported `refreshSession`. Retrying the 409 race by
@@ -171,8 +188,15 @@ async function performRefresh(attempt = 0): Promise<boolean> {
  * Returns true on success. Never throws: callers need a boolean to decide
  * whether to retry, and an exception here would surface as an unhandled
  * rejection in whichever component happened to lose the race.
+ *
+ * The cookie check comes first so an anonymous page load costs no request. A
+ * caller that ignores the answer still gets `false`, which is what it would
+ * have got from the server — just without a round trip and without a red line
+ * in the console.
  */
 export function refreshSession(): Promise<boolean> {
+  if (!hasSession()) return Promise.resolve(false);
+
   refreshPromise ??= performRefresh().finally(() => {
     // Cleared after the promise settles. Assigning inside the async body
     // instead would let a caller that resolves in the same tick observe the
@@ -190,16 +214,20 @@ function loseSession(): void {
 }
 
 /**
- * Perform an API request, refreshing once and retrying on 401.
+ * One request, one parse, one refresh-and-retry policy.
  *
- * The retry is what makes a 15-minute access token invisible to the user: a
- * request made just after expiry fails, silently refreshes, and succeeds — with
- * the caller never seeing the 401.
+ * Both exported entry points below go through here. They used to be separate
+ * implementations and that is exactly how they drifted: the `meta` variant
+ * grew its own `fetch`, so it ignored `skipAuthRetry`, never called
+ * `loseSession()` when the refresh token turned out to be dead, and retried by
+ * recursing into itself with no flag to stop — a 401 that survived a refresh
+ * refreshed and retried forever. Anything the client does about authentication
+ * has to happen in one place or it happens inconsistently.
  */
-export async function apiRequest<T>(
+async function requestEnvelope<T>(
   path: string,
   options: RequestOptions = {},
-): Promise<T> {
+): Promise<ApiEnvelope<T>> {
   let response = await rawRequest(path, options);
 
   if (response.status === 401 && !options.skipAuthRetry) {
@@ -213,7 +241,7 @@ export async function apiRequest<T>(
   }
 
   if (response.status === 204) {
-    return undefined as T;
+    return { success: true, data: undefined as T, message: null, meta: {} };
   }
 
   const text = await response.text();
@@ -244,7 +272,21 @@ export async function apiRequest<T>(
     throw new ApiError(code, message, response.status, body?.error?.details);
   }
 
-  const body = parsed as ApiEnvelope<T>;
+  return parsed as ApiEnvelope<T>;
+}
+
+/**
+ * Perform an API request, refreshing once and retrying on 401.
+ *
+ * The retry is what makes a 15-minute access token invisible to the user: a
+ * request made just after expiry fails, silently refreshes, and succeeds — with
+ * the caller never seeing the 401.
+ */
+export async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const body = await requestEnvelope<T>(path, options);
   return body.data;
 }
 
@@ -269,21 +311,7 @@ export const api = {
 export async function apiWithMeta<T>(
   path: string,
 ): Promise<{ data: T; meta: Record<string, unknown> }> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    credentials: 'include',
-    headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
-  });
-
-  if (response.status === 401) {
-    if (await refreshSession()) return apiWithMeta<T>(path);
-  }
-
-  const body = (await response.json()) as ApiEnvelope<T> | ApiErrorBody;
-
-  if (!body.success) {
-    throw new ApiError(body.error.code, body.error.message, response.status, body.error.details);
-  }
-
+  const body = await requestEnvelope<T>(path, { method: 'GET' });
   return { data: body.data, meta: body.meta };
 }
 

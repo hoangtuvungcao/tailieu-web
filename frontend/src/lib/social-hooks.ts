@@ -426,13 +426,30 @@ export function useCollections(filters: { q?: string; page?: number; limit?: num
   });
 }
 
-export function useMyCollections(filters: { page?: number; limit?: number } = {}) {
+/**
+ * The signed-in user's own collections.
+ *
+ * `enabled` is required rather than optional, for the same reason
+ * `useUnreadCount` and `useForYou` require it: `/collections/mine` answers 401
+ * without a session, because "mine" has no meaning without an account.
+ *
+ * This one is easy to get wrong, because the page it lives on is public. The
+ * discover tab is open to everyone, so the page cannot simply sit behind
+ * `RequireAuth` — but calling the hook unconditionally meant a request that
+ * could only ever be refused went out on every visit, signed in or not, and the
+ * browser logged the 401 each time.
+ */
+export function useMyCollections(
+  filters: { page?: number; limit?: number } = {},
+  enabled: boolean,
+) {
   return useQuery({
     queryKey: ['social', 'collections', 'mine', filters],
     queryFn: async () => {
       const { data, meta } = await apiWithMeta<Collection[]>(`/collections/mine${qs(filters)}`);
       return { collections: data, meta: meta as unknown as PaginatedMeta };
     },
+    enabled,
   });
 }
 

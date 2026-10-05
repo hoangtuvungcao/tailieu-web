@@ -57,7 +57,12 @@ export function CollectionsPage() {
   const activeTab = isAuthenticated ? tab : 'discover';
 
   const discover = useCollections({ limit: 24 });
-  const mine = useMyCollections({ limit: 24 });
+  // Fetched only when its tab is open. Two reasons, and the second is the one
+  // that shows up in the console: `/collections/mine` has no answer for a
+  // signed-out visitor, and `isAuthenticated` is false until the bootstrap
+  // refresh has finished, so an unconditional call also fires on every reload
+  // *before* the session is restored — a request that can only be refused.
+  const mine = useMyCollections({ limit: 24 }, activeTab === 'mine');
 
   const query = activeTab === 'mine' ? mine : discover;
   const collections = query.data?.collections ?? [];
