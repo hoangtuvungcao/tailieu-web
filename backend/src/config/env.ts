@@ -71,14 +71,59 @@ const csvOrigins = (defaultValue: string[] = []) =>
     'CORS_ORIGINS must not contain "*" — a wildcard origin on an API that sends credentials is a vulnerability.',
   );
 
+/**
+ * The passwords the seeder uses when nothing overrides them.
+ *
+ * Named here rather than inlined so the seeder can recognise them, and so both
+ * places cannot drift apart — a guard that checks for a string the schema no
+ * longer produces is a guard that silently stops working.
+ *
+ * These are also published: `.env.example` is in a public repository. That is
+ * fine for development, where they exist so a fresh clone can log in without
+ * setup, and it is why the seeder refuses them in production. See
+ * `seedUsers` in `db/seeds/03-users.ts`.
+ */
+export const DEFAULT_SEED_PASSWORDS = {
+  admin: 'ChangeMe_Admin_2026',
+  moderator: 'ChangeMe_Mod_2026',
+  student: 'ChangeMe_Student_2026',
+} as const;
+
+/** Whether a seed password is one of the published development defaults. */
+export function isDefaultSeedPassword(password: string): boolean {
+  return Object.values(DEFAULT_SEED_PASSWORDS).some((value) => value === password);
+}
+
 // --- schema ------------------------------------------------------------------
 
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     API_PORT: intFromEnv(4000, 1),
+    /**
+     * Interface to listen on. Loopback by default, deliberately.
+     *
+     * The only thing that should ever reach this process is the Cloudflare
+     * Tunnel on the same machine, and it connects to `localhost`. Binding to
+     * every interface would additionally expose the API to the whole LAN —
+     * and, worse, would let anyone on that network send our client-address
+     * header from a non-loopback connection and claim someone else's identity
+     * for rate limiting. `lib/http/client-ip.ts` trusts that header only
+     * because the peer is loopback; this setting is what keeps that true.
+     *
+     * Set to 0.0.0.0 only for a deliberate, firewalled setup.
+     */
+    API_HOST: z.string().min(1).default('127.0.0.1'),
     API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+    /**
+     * Whether Fastify should trust `X-Forwarded-For` from the tunnel.
+     *
+     * This does NOT control the real client address — that comes from our own
+     * header (`CLIENT_IP_HEADER`). It only tells Fastify it is behind a proxy
+     * for logging and `request.protocol`. Kept opt-in because a forwarded
+     * header a client can set is a header a client can lie in.
+     */
     TRUST_PROXY: boolFromEnv(false),
 
     // Database
@@ -124,6 +169,18 @@ const envSchema = z
     // Rate limits
     RATE_LIMIT_GLOBAL_PER_MIN: intFromEnv(300, 1),
     RATE_LIMIT_LOGIN_PER_15MIN: intFromEnv(10, 1),
+    /**
+     * The refresh endpoint, which every full page load calls once.
+     *
+     * Keyed on the client address, so the effective budget is per *address*,
+     * not per person. That matters on a campus: a whole faculty browsing
+     * through one NAT egress shares this counter, and the default that looks
+     * generous for one student can be tight for a lecture hall. The endpoint
+     * still requires a valid refresh cookie, so this is a resource limit rather
+     * than the abuse control — token rotation is that — which is why it is
+     * worth raising here rather than redesigning.
+     */
+    RATE_LIMIT_REFRESH_PER_15MIN: intFromEnv(60, 1),
     RATE_LIMIT_REGISTER_PER_HOUR: intFromEnv(5, 1),
     RATE_LIMIT_PASSWORD_RESET_PER_HOUR: intFromEnv(5, 1),
     RATE_LIMIT_UPLOAD_PER_HOUR: intFromEnv(100, 1),
@@ -153,11 +210,11 @@ const envSchema = z
 
     // Seeding
     SEED_ADMIN_EMAIL: z.string().email().default('admin@tailieu.local'),
-    SEED_ADMIN_PASSWORD: z.string().min(8).default('ChangeMe_Admin_2026'),
+    SEED_ADMIN_PASSWORD: z.string().min(8).default(DEFAULT_SEED_PASSWORDS.admin),
     SEED_MODERATOR_EMAIL: z.string().email().default('moderator@tailieu.local'),
-    SEED_MODERATOR_PASSWORD: z.string().min(8).default('ChangeMe_Mod_2026'),
+    SEED_MODERATOR_PASSWORD: z.string().min(8).default(DEFAULT_SEED_PASSWORDS.moderator),
     SEED_STUDENT_EMAIL: z.string().email().default('student@tailieu.local'),
-    SEED_STUDENT_PASSWORD: z.string().min(8).default('ChangeMe_Student_2026'),
+    SEED_STUDENT_PASSWORD: z.string().min(8).default(DEFAULT_SEED_PASSWORDS.student),
 
     // Cloudflare
     TUNNEL_HOSTNAME: z.string().optional().default(''),

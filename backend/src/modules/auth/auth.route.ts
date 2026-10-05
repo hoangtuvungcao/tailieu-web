@@ -70,7 +70,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           // Generous: every page load after the access token expires triggers
           // one, and multiple tabs share the cookie. The rotation logic itself
           // is the abuse control here, not the rate limit.
-          max: 60,
+          //
+          // Configurable because the budget is per client address, and a campus
+          // behind one NAT shares it. See `RATE_LIMIT_REFRESH_PER_15MIN`.
+          max: env.RATE_LIMIT_REFRESH_PER_15MIN,
           timeWindow: '15 minutes',
         },
       },

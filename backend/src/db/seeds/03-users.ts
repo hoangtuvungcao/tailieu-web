@@ -14,7 +14,7 @@
 import { eq } from 'drizzle-orm';
 
 import { ROLES } from '../../config/permissions.js';
-import { env, isProduction } from '../../config/env.js';
+import { env, isDefaultSeedPassword, isProduction } from '../../config/env.js';
 import { hashPassword } from '../../lib/password.js';
 import { db } from '../client.js';
 import { roles, storageUsage, userRoles, users, authIdentities } from '../schema/index.js';
@@ -67,6 +67,28 @@ export async function seedUsers(): Promise<UsersSeedResult> {
       if (existing[0]) {
         skipped.push(email);
         continue;
+      }
+
+      // Refuse to create an account whose password is published.
+      //
+      // `.env.example` is in a public repository, so `ChangeMe_Admin_2026` is
+      // not a secret — it is a documented default. Seeding with it in
+      // production would create a super_admin that anyone who has read the
+      // repository can sign in as, and nothing else in the stack would object:
+      // the password satisfies the length rule, and the account is marked
+      // verified so it can log in immediately.
+      //
+      // This sits after the `existing[0]` check deliberately. Re-running the
+      // seeder on an established deployment must keep working — it is how RBAC
+      // and taxonomy updates reach the database — and at that point no account
+      // is created, so there is nothing to refuse. The check fires only when a
+      // default password is about to become a real credential.
+      if (isProduction && isDefaultSeedPassword(account.password)) {
+        throw new Error(
+          `Refusing to seed ${email} with the published default password in production.\n` +
+            `Set SEED_ADMIN_PASSWORD / SEED_MODERATOR_PASSWORD / SEED_STUDENT_PASSWORD ` +
+            `to real values in the environment file, then run the seed again.`,
+        );
       }
 
       const [user] = await tx
