@@ -36,6 +36,16 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('MEDIA_NOT_FOUND', 'Không tìm thấy tệp.');
     }
 
+    // `cross-origin`, against the API's `same-site` default.
+    //
+    // These images are public by design — no credential is needed and the same
+    // bytes are served to everyone, which is why the route exists. `same-site`
+    // would stop a social crawler on another domain from fetching an avatar, so
+    // a shared profile link would preview without its image even though the URL
+    // is in the markup. The key shape is what protects this route, not the
+    // response policy.
+    reply.header('cross-origin-resource-policy', 'cross-origin');
+
     return streamObject(request, reply, {
       location: { bucket: env.S3_BUCKET, key },
       contentType,

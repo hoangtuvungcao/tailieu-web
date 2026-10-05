@@ -147,6 +147,29 @@ export async function streamObject(
     );
   }
 
+  // Framing.
+  //
+  // The API's helmet defaults are `frame-ancestors 'none'` and
+  // `X-Frame-Options: DENY`, which are right for a JSON endpoint and wrong for
+  // this one. An `inline` object is displayed *inside* the page — a PDF in an
+  // `<object>`, an image in an `<iframe>` — and a browser told it may not be
+  // framed refuses to render it at all. The viewer then shows its fallback
+  // text, so the feature looks like "this browser cannot display PDFs" while
+  // the bytes arrive perfectly.
+  //
+  // `'self'`, not a wildcard. The frontend proxies `/api` (Vite in
+  // development, a Pages Function in production), so from the browser this is
+  // the same origin; naming it explicitly keeps every other site out, which is
+  // the clickjacking protection the deny-by-default rule was there for.
+  //
+  // Only for `inline`. An `attachment` is saved, never framed, so it keeps the
+  // API's own stricter headers.
+  if (options.disposition?.kind === 'inline') {
+    reply
+      .header('content-security-policy', "default-src 'none'; frame-ancestors 'self'")
+      .header('x-frame-options', 'SAMEORIGIN');
+  }
+
   if (range) {
     const length = range.end - range.start + 1;
     reply
