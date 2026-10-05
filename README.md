@@ -200,11 +200,10 @@ Biến môi trường bắt buộc cho Pages: `API_ORIGIN` (hostname tunnel).
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Triển khai, sao lưu, xử lý sự cố | ✅ |
 | [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Quy ước mã nguồn, test, commit | ✅ |
 | [WINDOWS.md](docs/WINDOWS.md) | Triển khai trên Windows Server 2012 R2 (không Docker) | ✅ |
-| [ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) | Vận hành hằng ngày | ✅ |
-| [USER_GUIDE.md](docs/USER_GUIDE.md) | Hướng dẫn người dùng cuối | ✅ |
-| [ENVIRONMENT.md](docs/ENVIRONMENT.md) | Biến môi trường: cái nào quan trọng, sai thì hỏng gì | ✅ |
 | [ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) | Vận hành hằng ngày, phân quyền, xử lý sự cố | ✅ |
 | [USER_GUIDE.md](docs/USER_GUIDE.md) | Dành cho sinh viên và giảng viên | ✅ |
+| [ENVIRONMENT.md](docs/ENVIRONMENT.md) | Biến môi trường: cái nào quan trọng, sai thì hỏng gì | ✅ |
+| [SQLSERVER_MIGRATION.md](docs/SQLSERVER_MIGRATION.md) | Kế hoạch di trú sang SQL Server 2017 — khối lượng, mất mát, thứ tự | 📋 |
 
 > **`.env.example` là danh sách đầy đủ**; `ENVIRONMENT.md` bổ sung phần nó không
 > nói: biến nào sai sẽ hỏng **lặng lẽ**, khác gì giữa dev và production, và vì sao

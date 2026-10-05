@@ -167,7 +167,37 @@ lập tức**. Không có cửa sổ 15 phút nào để tài khoản bị đìn
 
 ---
 
-## 4. Xử lý sự cố
+## 4. Danh mục
+
+Màn hình **Danh mục** quản lý bảy loại dữ liệu nền: khoa, ngành, học phần, lớp học
+phần, năm học, học kỳ và loại tài liệu. Mỗi loại là một tab; bảng và biểu mẫu dùng
+chung một cách hiển thị nên thao tác giống nhau ở mọi tab.
+
+- **Thêm** — nút góc trên bên phải. Trường có dấu `*` là bắt buộc.
+- **Sửa** — biểu tượng bút chì ở cuối dòng.
+- **Xoá** — biểu tượng thùng rác, hỏi xác nhận tại chỗ trước khi xoá.
+
+**Mã (`code`) chỉ nhập được khi tạo, không sửa được.** Mã là thứ mà tài liệu cũ và
+các dòng khác trỏ tới; đổi nó là di trú dữ liệu chứ không phải sửa một ô. API từ
+chối trường này trong mọi lệnh cập nhật, và biểu mẫu cũng không hiện nó.
+
+Một vài điều đáng biết:
+
+- **Xoá là xoá mềm** ở hầu hết loại. Tài liệu đã gắn nhãn vẫn giữ nguyên nhãn đó.
+- **Ngành chuyển được sang khoa khác.** Tài liệu cũ trỏ tới ngành bằng id, nên việc
+  chuyển khoa không viết lại metadata của chúng.
+- **Chính sách kiểm duyệt** của loại tài liệu quyết định tài liệu mới thuộc loại đó
+  có phải chờ duyệt không. Đặt `Cần duyệt trước` là cách chặn một loại nội dung mà
+  không phải tắt tải lên.
+- Danh sách tải tối đa **100 mục** mỗi lần. Nếu còn mục chưa hiện, màn hình báo rõ số
+  lượng — nhưng hiện chưa có phân trang.
+
+Sửa danh mục sẽ tự làm mới bộ lọc khoa và loại tài liệu ở trang Tài liệu, nên không
+cần tải lại trang.
+
+---
+
+## 5. Xử lý sự cố
 
 ### "Hệ thống đang bảo trì" mà tôi không bật
 
@@ -229,7 +259,7 @@ Nếu nhiều người dùng cùng lúc, nghi ngờ (2).
 
 ---
 
-## 5. Việc định kỳ
+## 6. Việc định kỳ
 
 | Việc | Tần suất | Ở đâu |
 |---|---|---|
@@ -244,7 +274,7 @@ Nếu nhiều người dùng cùng lúc, nghi ngờ (2).
 
 ---
 
-## 6. Những việc KHÔNG làm
+## 7. Những việc KHÔNG làm
 
 - **Không sửa database trực tiếp** trừ khi không còn đường khác. Mọi thay đổi qua
   giao diện đều sinh nhật ký kiểm toán; sửa tay thì không.
@@ -256,11 +286,12 @@ Nếu nhiều người dùng cùng lúc, nghi ngờ (2).
 
 ---
 
-## 7. Giới hạn đã biết
+## 8. Giới hạn đã biết
 
 | | |
 |---|---|
-| **Giao diện quản trị thiếu trang taxonomy** | API đã có và đã kiểm soát quyền; thêm khoa/ngành hiện phải gọi API |
-| **Không quản lý huy hiệu và uy tín qua giao diện** | Chưa xây dựng (Giai đoạn 4) |
+| **Danh mục chỉ tải 100 mục mỗi lần** | API giới hạn 100 mục/trang; màn hình **Danh mục** báo rõ khi còn mục chưa hiện, nhưng chưa có phân trang |
+| **Không gán giảng viên cho lớp học phần qua giao diện** | Trường `lecturerUserId` có trong API nhưng cần ô chọn người dùng; hiện để trống khi tạo lớp |
+| **Không quản lý huy hiệu qua giao diện** | Huy hiệu do seed tạo; sửa tiêu chí phải chạy lại seed |
 | **Không xem trước tệp trong hàng đợi kiểm duyệt** | Phải mở tài liệu ở tab khác |
 | **Không có sao lưu tự động** | Hướng dẫn có trong DEPLOYMENT.md; phải tự đặt lịch |

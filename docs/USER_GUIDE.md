@@ -171,6 +171,29 @@ Xoá một bình luận của mình sẽ để lại một dòng "Bình luận �
 trả lời bên dưới **vẫn còn** — chúng không thuộc về bình luận bạn xoá. Tên và nội
 dung của bình luận đã xoá không hiển thị cho ai, kể cả bạn.
 
+### Thông báo
+
+Biểu tượng **chuông** trên thanh tiêu đề hiện số thông báo chưa đọc. Bấm vào đó
+để mở trang **Thông báo**.
+
+Bạn được thông báo khi **người khác** thích bài viết, tài liệu hay bình luận của
+bạn; bình luận về bài viết hoặc tài liệu của bạn; trả lời bình luận của bạn; hoặc
+theo dõi bạn. Hành động của chính bạn không tạo thông báo cho bạn.
+
+Nếu nhiều người cùng làm một việc trên cùng một nội dung, chúng được gộp thành
+**một dòng** — "Nguyễn Văn A và 99 người khác đã thích bài viết của bạn". Nhờ vậy
+một bài viết được thích một nghìn lần vẫn chỉ tốn một thông báo.
+
+Mở một thông báo sẽ đánh dấu nó đã đọc. Nút **Đánh dấu tất cả đã đọc** xoá toàn bộ
+số chưa đọc.
+
+Hai điều đáng biết:
+
+- Thông báo **không lưu tiêu đề** của nội dung, chỉ nói ai và đã làm gì. Nội dung
+  được mở và **kiểm tra lại quyền** đúng lúc bạn bấm vào. Nếu chủ nội dung đã
+  chuyển nó sang riêng tư sau đó, bạn sẽ không mở được — đó là hành vi đúng.
+- Thông báo **theo dõi** dẫn tới hồ sơ của người đã theo dõi bạn.
+
 ### Bộ sưu tập
 
 Bộ sưu tập là danh sách tài liệu và bài viết bạn gom lại theo chủ đề, và **có thứ
@@ -189,6 +212,78 @@ chép địa chỉ trên thanh địa chỉ, rồi dán vào ô **Thêm bằng l
 > tập có thể hiện "3 mục" với bạn và "2 mục" với người khác.
 
 Bạn cũng không thể thêm một tài liệu mà chính bạn không mở được.
+
+### Hồ sơ và theo dõi
+
+Bấm vào **tên hoặc ảnh đại diện** ở bất kỳ đâu — bài đăng, bình luận, tài liệu —
+để mở hồ sơ công khai của người đó.
+
+Hồ sơ hiện tên, phần giới thiệu, khoa/ngành, năm nhập học và bốn số liệu: bài
+đăng, tài liệu, người theo dõi, đang theo dõi. Bấm **Theo dõi** để nhận thông báo
+khi họ đăng bài mới.
+
+> **Các số liệu trên hồ sơ là những gì *bạn* được xem, không phải tổng số của
+> người đó.** Một tài khoản có ba bài, trong đó một bài riêng tư, sẽ hiện "2 bài
+> đăng" với bạn và "3 bài đăng" với chính họ. Bấm vào số liệu để mở đúng danh
+> sách đã đếm ra con số đó.
+
+Bạn không tự theo dõi được mình, và tài khoản đã yêu cầu xoá dữ liệu thì không
+còn hồ sơ — mở vào sẽ báo không tìm thấy.
+
+### Uy tín và huy hiệu
+
+Hồ sơ hiện **điểm uy tín** và những **huy hiệu** bạn đã đạt được.
+
+Điểm uy tín **không** tăng khi bạn đăng nội dung. Nó chỉ tăng khi **người khác**
+thích nội dung của bạn. Điều này có chủ đích: nếu đăng bài là có điểm thì cách
+kiếm điểm rẻ nhất là đăng thật nhiều, và phần thưởng sẽ thuộc về người đăng nhiều
+nhất chứ không phải người đóng góp tốt nhất.
+
+- Tự thích nội dung của mình **không** được điểm.
+- Thích rồi bỏ thích rồi thích lại **không** cộng thêm — mỗi nội dung chỉ tính một
+  lần.
+- Một người chỉ có thể đóng góp tối đa **20 điểm** cho bạn trong 24 giờ, và bạn chỉ
+  nhận tối đa **100 điểm** trong 24 giờ, dù có bao nhiêu người thích đi nữa.
+
+**Điểm uy tín có thể âm.** Khi nội dung bị kiểm duyệt viên gỡ, một sự kiện trừ điểm
+được ghi lại, lớn hơn phần đã cộng. Nhờ vậy "đăng trước, xin lỗi sau" không phải là
+chiến lược có lãi.
+
+**Huy hiệu chỉ để trưng bày** — chúng không cộng điểm và không ảnh hưởng gì đến
+quyền hạn của bạn.
+
+### Bảng xếp hạng
+
+Mục **Xếp hạng** trên thanh điều hướng mở bảng xếp hạng **theo tháng**, dựa trên
+điểm uy tín nhận được trong tháng đó.
+
+Bảng toàn trường ai cũng xem được, kể cả chưa đăng nhập. Nếu bạn đã đăng nhập và
+tài khoản có ghi khoa, sẽ có thêm tab xem bảng **trong khoa mình**.
+
+Nếu bạn đã có điểm trong tháng, hồ sơ của bạn hiện **vị trí của bạn** ngay cả khi
+bạn không nằm trong danh sách hiển thị. Chưa có điểm thì không có vị trí — bảng
+không xếp hạng người chưa đóng góp gì.
+
+> Hiện chỉ có bảng **theo tháng**. Bảng theo học kỳ và theo năm cần tổng luỹ tiến
+> riêng cho từng kỳ, hiện chưa có — nên giao diện không hiện những tab đó thay vì
+> hiện rồi trả về rỗng.
+
+### Đã lưu
+
+Nút **Lưu** có trên mỗi tài liệu và bài viết. Danh sách riêng của bạn nằm ở mục
+**Đã lưu** trên thanh điều hướng — **chỉ mình bạn thấy**, kể cả khi nội dung được
+lưu là công khai.
+
+Muốn gom lại theo chủ đề, bấm **Thêm vào thư mục** dưới một mục rồi gõ tên thư mục.
+Tên thư mục do bạn tự đặt; những tên đã dùng sẽ được gợi ý. Xoá trắng ô đó rồi lưu
+nghĩa là **bỏ khỏi thư mục** — mục vẫn còn trong danh sách Đã lưu.
+
+> **Bộ sưu tập và Đã lưu khác nhau.** Bộ sưu tập là danh sách *bạn chia sẻ được*
+> với người khác. Đã lưu là danh sách *riêng tư* của bạn, và không ai khác thấy.
+
+Nếu một nội dung bạn đã lưu về sau được chủ sở hữu chuyển sang riêng tư, nó **biến
+mất** khỏi danh sách Đã lưu của bạn — và khỏi số đếm của thư mục. Bạn không mất dữ
+liệu: nếu nội dung được mở lại, mục đó xuất hiện trở lại.
 
 ---
 
@@ -246,12 +341,9 @@ báo cáo đang chờ, nên báo một lần là đủ.
 
 Để bạn không mất thời gian tìm:
 
-- **Chưa có trang bookmark** — API đã có, giao diện chưa
-- **Chưa có trang thông báo trong ứng dụng** — API đã có, giao diện chưa; thay
-  đổi quan trọng hiện gửi qua email
-- **Chưa có hồ sơ công khai, theo dõi, bảng xếp hạng và huy hiệu**
 - **Chưa có hỏi đáp (Q&A) và nhóm cộng đồng**
 - **Chưa đăng nhập bằng Google**
 
-Bài đăng, bình luận, thích, bộ sưu tập và tìm kiếm đã dùng được thật — không có
-nút nào ở đó là giả.
+Bài đăng, bình luận, thích, theo dõi, hồ sơ công khai, uy tín, huy hiệu, bảng xếp
+hạng, bộ sưu tập, thông báo, đã lưu và tìm kiếm đã dùng được thật — không có nút nào
+ở đó là giả.

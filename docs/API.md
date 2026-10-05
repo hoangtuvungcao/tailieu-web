@@ -329,14 +329,117 @@ hợp lệ mà không có gì để hiển thị.
 | PUT | `/api/v1/likes/:target/:id` | Đăng nhập |
 | GET | `/api/v1/likes/:target/:id` | Tuỳ chọn |
 | PUT | `/api/v1/follows/:userId` | Đăng nhập |
+| GET | `/api/v1/follows/:userId` | Tuỳ chọn |
+| GET | `/api/v1/follows/:userId/followers` | Tuỳ chọn |
+| GET | `/api/v1/follows/:userId/following` | Tuỳ chọn |
+| GET | `/api/v1/users/:id` | Tuỳ chọn |
+| GET | `/api/v1/leaderboards` | Tuỳ chọn |
+| GET | `/api/v1/feed/trending` | Tuỳ chọn |
+| GET | `/api/v1/feed/for-you` | Đăng nhập |
 | GET | `/api/v1/bookmarks` | Đăng nhập |
+| GET | `/api/v1/bookmarks/folders` | Đăng nhập |
+| GET | `/api/v1/bookmarks/:target/:id` | Tuỳ chọn |
 | PUT | `/api/v1/bookmarks/:target/:id` | Đăng nhập |
 | GET | `/api/v1/notifications` | Đăng nhập |
 | GET | `/api/v1/notifications/unread-count` | Đăng nhập |
+| POST | `/api/v1/notifications/read-all` | Đăng nhập |
+| POST | `/api/v1/notifications/:id/read` | Đăng nhập |
+| POST | `/api/v1/notifications/reconcile` | Đăng nhập |
 
 `target` là một trong `document`, `post`, `collection`. Like và bookmark dùng
 `PUT { "liked": true }` / `{ "bookmarked": true }` — nêu rõ trạng thái mong muốn
 thay vì đảo trạng thái, để một request được thử lại không tự huỷ chính nó.
+
+`GET /posts` có **hai chế độ phân trang**, chọn bằng việc có gửi `page` hay không:
+
+| Gửi | Chế độ | `meta` |
+|---|---|---|
+| `page=2` | theo số trang | `total`, `totalPages`, `page` |
+| không gửi `page` | theo con trỏ | `nextCursor`, `limit` |
+
+Chế độ con trỏ dùng keyset trên `(created_at, id)`, phục vụ trực tiếp bởi chỉ mục
+`posts_recent_idx`. Đây là chế độ của bảng tin: với phân trang theo số trang, một
+bài được đăng trong lúc người đọc đang ở trang 1 sẽ đẩy mọi dòng xuống, nên trang 2
+mở đầu bằng đúng bài cuối của trang 1 — người đọc thấy lặp, và bài bị đẩy qua ranh
+giới thì không bao giờ thấy. Con trỏ không đếm, nên chế độ này **không** trả `total`;
+nó lấy thêm một dòng để biết còn nữa hay không.
+
+`nextCursor` là chuỗi **đục** (base64url) — client không nên tự dựng. Cursor sai
+định dạng trả **400**, không âm thầm quay về trang 1: một cursor hỏng mà lặng lẽ bắt
+đầu lại trông y hệt một lần tải lại trang.
+
+Sắp xếp `popular` **bỏ qua** cursor và luôn dùng `page`: `hot_score` đổi theo mỗi
+lượt thích, nên vị trí trong thứ tự đó không ổn định — con trỏ ở đó sẽ bỏ sót dòng
+đi lên và lặp dòng đi xuống.
+
+Trường `folder` của bookmark có **ba giá trị**, và ba giá trị này khác nhau:
+
+| Gửi | Nghĩa |
+|---|---|
+| bỏ hẳn trường `folder` | giữ nguyên thư mục hiện tại |
+| `"folder": null` | bỏ khỏi thư mục |
+| `"folder": "Ôn thi"` | chuyển vào thư mục đó |
+
+Gộp `null` và "không gửi" làm một (ví dụ bằng `.nullish()`) khiến một thư mục đã
+đặt **không thể xoá được nữa** — hai yêu cầu trái ngược nhau trở thành cùng một
+request. Nút Lưu trên trang chi tiết không gửi trường này, nên nó không bao giờ
+vô tình bỏ nội dung ra khỏi thư mục.
+
+`GET /bookmarks/folders` đếm bằng **cùng vị từ hiển thị** như danh sách, nên một
+thư mục không bao giờ báo nhiều mục hơn số lượng mở ra thấy.
+
+`GET /users/:id` trả về hồ sơ công khai. Trường `stats` ở đó là **số lượng mà
+người gọi được xem**, không phải tổng của tài khoản — hồ sơ dẫn tới danh sách bài
+đăng và tài liệu, và cả hai danh sách đó áp cùng vị từ, nên con số hiển thị luôn
+khớp với danh sách mở ra. Tài khoản đã xoá dữ liệu (`anonymized_at`) trả **404**,
+không trả một hồ sơ rỗng.
+
+`reputation` và `badges` trong hồ sơ thì **không** lọc theo người xem — uy tín không
+phải nội dung, nên không có gì để giữ lại. `reputation` có thể **âm**: khi nội dung
+bị gỡ, một sự kiện trừ điểm lớn hơn phần đã cộng được ghi vào `reputation_events`,
+và đó là nguồn sự thật duy nhất — mọi con số khác đều suy ra từ nó.
+
+Điểm uy tín chỉ đến từ hành động của **người khác**. Tự thích nội dung của mình
+không tính (chặn ở tầng ghi và bằng một CHECK constraint), mỗi nội dung chỉ tính
+một lần dù thích/bỏ thích bao nhiêu lần (khoá `dedupe_key`), và có hai mức trần
+trong 24 giờ: một người tặng tối đa **20 điểm** cho một người nhận, một người nhận
+tối đa **100 điểm**. Huy hiệu được trao **lười** ngay khi ghi sự kiện uy tín — không
+cần cron — và không bao giờ cộng ngược lại vào uy tín.
+
+`GET /leaderboards` trả bảng xếp hạng theo tháng. `period` là khoá tháng dạng
+`YYYY-MM` (mặc định là tháng hiện tại), `scope` là `university` | `faculty` |
+`program`. Bảng toàn trường **không** nhận `scopeId` (dòng của nó lưu với
+`scope_id IS NULL`); hai bảng còn lại **bắt buộc** có. Bảng chỉ gồm người có điểm
+**dương** trong kỳ, và trường `viewer` cho biết vị trí của người gọi ngay cả khi họ
+nằm ngoài trang trả về — hoặc `null` nếu họ chưa có điểm, vì xếp hạng một người
+chưa đóng góp gì là con số vô nghĩa.
+
+Hiện chỉ có kỳ `monthly`. `period_key` là text tự do nên học kỳ/năm thêm được
+không cần migration, nhưng phải có tổng luỹ tiến riêng cho từng kỳ — và chưa có gì
+duy trì chúng. Bảng toàn thời gian cũng vậy: nó là `sum(delta)` trên toàn bộ sự
+kiện, đúng cái truy vấn mà bảng tổng luỹ tiến sinh ra để tránh.
+
+`GET /feed/trending` xếp hạng theo tương tác trong **24 giờ gần nhất**, có suy giảm
+theo tuổi, lưu trong Redis sorted set (một `ZINCRBY` cho mỗi lượt thích/bình
+luận/bookmark, đọc bằng `ZUNIONSTORE` 24 bucket với trọng số `1, 1/2, 1/3…`). **Redis
+chỉ là bộ tăng tốc**: hỏng Redis thì endpoint lùi về một truy vấn SQL có chặn (7 ngày,
+`ORDER BY hot_score`), không trả lỗi. Trường `meta.ranking` cho biết bảng nào thực sự
+đã chạy — `trending` hay `popular-fallback` — vì đó là hai khẳng định khác nhau và
+client không nên phải đoán.
+
+Tự thích bài của mình **không** ghi tín hiệu xu hướng (bài vẫn có lượt thích thật, chỉ
+là vô nghĩa như một tín hiệu xếp hạng) — cùng lý do hệ thống uy tín từ chối tự thưởng.
+
+`GET /feed/for-you` **yêu cầu đăng nhập**, và trả 401 nếu không có. Đây là **heuristic
+minh bạch**, không phải học máy: điểm số là ba hạng tử đọc được — `+3` người bạn theo
+dõi, `+2` cùng khoa với bạn, `+1` đang nổi bật — rồi lấy tương tác và độ mới làm
+tiêu chí phụ. Tài khoản mới chưa theo dõi ai và chưa có khoa sẽ nhận bảng tin theo độ
+mới (mọi hạng tử bằng 0), đó là suy giảm đúng chứ không phải lỗi. `meta.note` nói rõ
+điều này trong chính phản hồi.
+
+`GET /notifications/unread-count` trả **304** khi số chưa đọc không đổi, kèm`ETag` là chính con số đó — nhờ vậy một tab đang mở không tải lại dữ liệu mỗi phút.
+Số này đọc từ cột đếm sẵn trên `users`, không phải `count(*)`. `POST
+/notifications/reconcile` tính lại từ bảng gốc và dùng để tự sửa nếu cột bị lệch.
 
 ### Bộ sưu tập
 

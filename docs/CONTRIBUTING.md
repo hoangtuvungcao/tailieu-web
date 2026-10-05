@@ -149,7 +149,12 @@ lần chạy đầu — một lỗi mà mọi test mock đều bỏ qua.
 Vì sao thay đổi này, không phải cái gì. Phần "cái gì" nằm ở diff.
 ```
 
-Phạm vi: `auth`, `documents`, `upload`, `search`, `taxonomy`, `db`, `ui`, `deploy`, `docs`.
+Phạm vi: `auth`, `documents`, `upload`, `search`, `taxonomy`, `social`, `admin`,
+`db`, `ui`, `test`, `deploy`, `docs`.
+
+> Danh sách này từng cố định ở chín phạm vi, và `social`/`admin`/`test` ra đời
+> sau. Thêm một phạm vi mới thì sửa luôn dòng này — một quy ước không được cập
+> nhật sẽ bị bỏ qua, và lịch sử commit là thứ không sửa lại được.
 
 Ví dụ:
 
