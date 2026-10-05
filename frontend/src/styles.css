@@ -1,0 +1,209 @@
+@import 'tailwindcss';
+
+/**
+ * Design tokens.
+ *
+ * Colours are inspired by Tay Nguyen University's academic green and gold, kept
+ * restrained: green for primary actions and identity, gold for emphasis and
+ * achievement, neutral greys for everything else. A university platform that
+ * looks like a colour swatch is harder to read and reads as less serious.
+ *
+ * Every foreground/background pairing below meets WCAG AA (4.5:1 for body
+ * text). The muted greys are the ones usually chosen badly — `--muted-foreground`
+ * is deliberately darker than a typical design system's, because it sits on
+ * `--muted` backgrounds in captions and metadata where small text is common.
+ */
+
+@theme {
+  /* --- Brand ------------------------------------------------------------- */
+  --color-brand-50: oklch(0.97 0.02 155);
+  --color-brand-100: oklch(0.93 0.04 155);
+  --color-brand-200: oklch(0.86 0.07 155);
+  --color-brand-300: oklch(0.76 0.10 155);
+  --color-brand-400: oklch(0.64 0.12 155);
+  --color-brand-500: oklch(0.52 0.13 155);
+  --color-brand-600: oklch(0.42 0.12 155);
+  --color-brand-700: oklch(0.35 0.10 155);
+  --color-brand-800: oklch(0.28 0.08 155);
+  --color-brand-900: oklch(0.22 0.06 155);
+
+  --color-gold-50: oklch(0.98 0.02 85);
+  --color-gold-100: oklch(0.95 0.05 85);
+  --color-gold-200: oklch(0.90 0.09 85);
+  --color-gold-300: oklch(0.84 0.13 85);
+  --color-gold-400: oklch(0.78 0.15 85);
+  --color-gold-500: oklch(0.70 0.15 80);
+  --color-gold-600: oklch(0.60 0.14 75);
+  --color-gold-700: oklch(0.49 0.12 70);
+
+  /* --- Semantic surfaces -------------------------------------------------- */
+  --color-background: oklch(0.99 0.002 250);
+  --color-foreground: oklch(0.20 0.01 250);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.20 0.01 250);
+  --color-muted: oklch(0.96 0.004 250);
+  --color-muted-foreground: oklch(0.50 0.01 250);
+  --color-border: oklch(0.90 0.005 250);
+  --color-input: oklch(0.90 0.005 250);
+  --color-ring: oklch(0.52 0.13 155);
+
+  --color-primary: oklch(0.42 0.12 155);
+  --color-primary-foreground: oklch(0.99 0.002 250);
+  --color-secondary: oklch(0.96 0.004 250);
+  --color-secondary-foreground: oklch(0.20 0.01 250);
+  --color-accent: oklch(0.95 0.05 85);
+  --color-accent-foreground: oklch(0.35 0.08 70);
+
+  --color-destructive: oklch(0.55 0.20 27);
+  --color-destructive-foreground: oklch(0.99 0.002 250);
+  --color-success: oklch(0.55 0.14 150);
+  --color-warning: oklch(0.72 0.15 75);
+  --color-info: oklch(0.55 0.14 240);
+
+  /* --- Shape and motion --------------------------------------------------- */
+  --radius-sm: 0.25rem;
+  --radius: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+
+  --shadow-card: 0 1px 2px oklch(0.20 0.01 250 / 0.04), 0 4px 12px oklch(0.20 0.01 250 / 0.06);
+  --shadow-lifted: 0 2px 4px oklch(0.20 0.01 250 / 0.06), 0 12px 28px oklch(0.20 0.01 250 / 0.10);
+
+  /* --- Chart colours ------------------------------------------------------
+     Validated with the dataviz palette checker against THIS app's surfaces
+     (light card #ffffff, dark card #12171b) — not against the reference
+     palette's own surfaces, because a contrast result only means something
+     against the surface the mark actually sits on. Single series, so no
+     categorical adjacency applies; both clear the 3:1 contrast gate.
+
+     Blue is the sequential default. A second chart, if one is ever added,
+     takes the next categorical slot (orange) as its own one-hue ramp — never a
+     generated ninth hue. */
+  --chart-line: #2a78d6;
+  --chart-line-soft: color-mix(in oklch, var(--chart-line) 14%, transparent);
+  --chart-grid: var(--color-border);
+  --chart-axis-text: var(--color-muted-foreground);
+
+  --font-sans:
+    'Be Vietnam Pro', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Dark mode is driven by a class on <html> rather than only
+   `prefers-color-scheme`, so the user's explicit choice survives a system
+   theme change. The class is set before paint by an inline script in main.tsx
+   to avoid a flash of the wrong theme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+.dark {
+  --color-background: oklch(0.16 0.01 250);
+  --color-foreground: oklch(0.96 0.005 250);
+  --color-card: oklch(0.20 0.012 250);
+  --color-card-foreground: oklch(0.96 0.005 250);
+  --color-muted: oklch(0.25 0.012 250);
+  --color-muted-foreground: oklch(0.72 0.01 250);
+  --color-border: oklch(0.30 0.012 250);
+  --color-input: oklch(0.30 0.012 250);
+
+  --color-primary: oklch(0.68 0.13 155);
+  --color-primary-foreground: oklch(0.18 0.02 155);
+  --color-secondary: oklch(0.25 0.012 250);
+  --color-secondary-foreground: oklch(0.96 0.005 250);
+  --color-accent: oklch(0.30 0.05 85);
+  --color-accent-foreground: oklch(0.92 0.06 85);
+
+  /* Dark mode is SELECTED, not an automatic flip: this is a different step of
+     the same hue, validated against the dark surface on its own. */
+  --chart-line: #3987e5;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    /* Respect the OS setting. Parallax and large transitions cause real
+       nausea for some users, and accessibility guidance requires honouring
+       this rather than overriding it for polish. */
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* A visible focus ring on every interactive element. Never removed — the
+     ring is the only way a keyboard user knows where they are. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Vietnamese diacritics sit above and below the baseline; the default
+     line-height clips them in headings at large sizes. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer utilities {
+  /* Screen-reader-only, for labels that must exist but not be visible. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  .container-page {
+    width: 100%;
+    margin-inline: auto;
+    padding-inline: 1rem;
+    max-width: 80rem;
+  }
+
+  @media (min-width: 768px) {
+    .container-page {
+      padding-inline: 1.5rem;
+    }
+  }
+
+  /* Applied while a query is refetching, so the UI reads as "updating"
+     rather than "broken". */
+  .is-refetching {
+    opacity: 0.6;
+    transition: opacity 150ms ease;
+  }
+}

@@ -1,0 +1,56 @@
+# =============================================================================
+# Cloudflare Tunnel ingress for TAILIEU TTN
+# Install to: /etc/cloudflared/config.yml
+# =============================================================================
+#
+# This tunnel publishes the API on an INTERNAL hostname only:
+#     api-internal.tailieu.5125121.com  ->  http://localhost:4000
+#
+# The public site (tailieu.5125121.com) is served by Cloudflare Pages, and its
+# Pages Function proxies /api/* to this internal hostname. That indirection is
+# what lets the laptop's IP change freely — nothing public ever points at an IP.
+#
+# Do NOT add a `tailieu.5125121.com` ingress rule here. That hostname belongs
+# to Pages; claiming it here would shadow the frontend.
+# =============================================================================
+
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+# Laptop-friendly: keep the connector count low and don't hammer the API.
+originRequest:
+  connectTimeout: 30s
+  # Uploads are chunked to ~8MB, but a slow connection still needs headroom.
+  # If this is below the real transfer time, large chunks fail intermittently.
+  noTLSVerify: false
+  # Stream uploads straight through instead of buffering them in the
+  # connector — buffering would defeat chunked upload entirely.
+  disableChunkedEncoding: false
+  keepAliveTimeout: 90s
+  keepAliveConnections: 10
+
+ingress:
+  # Internal API hostname only. Reachable via Cloudflare, not by IP.
+  - hostname: api-internal.tailieu.5125121.com
+    service: http://localhost:4000
+    originRequest:
+      # Generous timeout: Office conversion on first upload can be slow, and a
+      # 524 from Cloudflare mid-conversion is confusing to debug.
+      connectTimeout: 30s
+      # Never let Cloudflare cache API responses.
+      httpHostHeader: localhost:4000
+
+  # Everything else is refused. A catch-all 404 is safer than a default route:
+  # a misconfigured ingress must fail closed, not expose the API on a hostname
+  # nobody expected.
+  - service: http_status:404
+
+# --- Operational notes -------------------------------------------------------
+# Metrics for observability (scrape from the tunnel host only):
+metrics: 127.0.0.1:20241
+loglevel: info
+transport-loglevel: warn
+
+# Validate before restarting:
+#   cloudflared tunnel ingress validate
+#   cloudflared tunnel ingress rule https://api-internal.tailieu.5125121.com/api/health

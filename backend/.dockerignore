@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+!.env.production.example
+drizzle/meta
+*.log
+tmp
+.vscode
+.idea

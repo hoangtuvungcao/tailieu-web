@@ -1,0 +1,243 @@
+# TAILIEU TTN — local development infrastructure
+#
+# Brings up Postgres, Redis, SeaweedFS (S3) and the Office->PDF conversion worker.
+# The API itself is NOT containerised here — it runs via `npm run dev` on the
+# host so you get fast reloads. Use the `api` profile to run it in Docker:
+#   docker compose --profile app up -d
+#
+# Ports (host): postgres 5432, redis 6379, seaweedfs 8333 (S3) / 8888 (filer UI)
+
+name: tailieu-ttn
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tailieu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tailieu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-tailieu}
+      # Deterministic collation so index/dedup behaviour matches production.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tailieu} -d ${POSTGRES_DB:-tailieu}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    command:
+      # Tuned for a laptop, not a server. Raise shared_buffers if you have RAM.
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=100
+      - -c
+      - log_min_duration_statement=500
+
+  redis:
+    image: redis:7-alpine
+    container_name: tailieu-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+
+  # ---------------------------------------------------------------------------
+  # Object storage — SeaweedFS S3 gateway.
+  #
+  # Why not MinIO: MinIO ended community distribution. The Docker Hub images
+  # (minio/minio, minio/mc) were removed in September 2026, quay.io stopped
+  # anonymous pulls shortly after, dl.min.io returns 410, the GitHub repo is
+  # archived, and CVE-2025-62506 is unpatched by the maintainers. It is no
+  # longer installable from any official source.
+  #
+  # SeaweedFS is Apache 2.0, actively maintained, and speaks the same S3 API,
+  # so nothing in the application changes — the AWS SDK client is identical.
+  # ---------------------------------------------------------------------------
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: tailieu-seaweedfs
+    restart: unless-stopped
+    ports:
+      - "${S3_PORT:-8333}:8333" # S3 API
+      - "${SEAWEED_MASTER_PORT:-9333}:9333" # master
+      - "${SEAWEED_FILER_PORT:-8888}:8888" # filer / web UI
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      # The S3 gateway answering on 8333 is the readiness signal that matters;
+      # master being up does not mean the S3 API is serving yet.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:9333/cluster/status >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        # Credentials are generated at container start rather than committed, so
+        # no secret ever lands in git. SeaweedFS reads its S3 identities from a
+        # static JSON file, which is why this is written here instead of being
+        # passed as a flag.
+        mkdir -p /etc/seaweedfs
+        cat > /etc/seaweedfs/s3.json <<EOF
+        {
+          "identities": [
+            {
+              "name": "tailieu",
+              "credentials": [
+                { "accessKey": "$$S3_ACCESS_KEY", "secretKey": "$$S3_SECRET_KEY" }
+              ],
+              "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+            }
+          ]
+        }
+        EOF
+        # `-s3.config` requires authentication for every request, so the bucket
+        # is never anonymously listable.
+        exec weed server \
+          -dir=/data \
+          -master.port=9333 \
+          -volume.port=8080 \
+          -filer.port=8888 \
+          -s3 \
+          -s3.port=8333 \
+          -s3.config=/etc/seaweedfs/s3.json \
+          -master.volumeSizeLimitMB=1024 \
+          -volume.max=0
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+
+  # LibreOffice headless: converts docx/pptx/xlsx -> PDF for preview.
+  # Deliberately a separate container: conversion is CPU/RAM hungry and must
+  # never be able to take the API process down with it.
+  converter:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: tailieu-converter
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    # The worker shares the application's config module, which validates the
+    # full environment at startup — including secrets it never uses. Loading the
+    # same file keeps one source of truth rather than a second, partial list
+    # that drifts. The values below then override hostnames for the compose
+    # network.
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?S3_ACCESS_KEY is required}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY is required}
+      S3_BUCKET: ${S3_BUCKET:-tailieu-documents}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: "true"
+      # Scanning, when the scan profile is up. The hostname is the compose
+      # service name, not localhost — inside the container, localhost is itself.
+      SCAN_ENABLED: ${SCAN_ENABLED:-false}
+      CLAMAV_ADDRESS: ${CLAMAV_ADDRESS_IN_DOCKER:-clamav:3310}
+      SCAN_MAX_BYTES: ${SCAN_MAX_BYTES:-104857600}
+      CONVERTER_CONCURRENCY: ${CONVERTER_CONCURRENCY:-1}
+      # A hung soffice process must not wedge the worker forever.
+      CONVERT_TIMEOUT_MS: ${CONVERT_TIMEOUT_MS:-120000}
+      DATABASE_URL: postgres://${POSTGRES_USER:-tailieu}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tailieu}
+      NODE_ENV: ${NODE_ENV:-development}
+
+  # ---------------------------------------------------------------------------
+  # ClamAV — virus scanning.
+  #
+  # Behind a profile, and therefore OFF by default. The signature database is
+  # roughly 1GB resident, which is a real cost on a laptop, and a deployment
+  # that has not installed it must still work (files are marked `skipped`).
+  #
+  #   docker compose --profile scan up -d clamav
+  #
+  # The first start downloads signatures and can take several minutes; the
+  # healthcheck allows for that rather than declaring the container dead.
+  # ---------------------------------------------------------------------------
+  clamav:
+    profiles: ["scan"]
+    image: clamav/clamav:latest
+    container_name: tailieu-clamav
+    restart: unless-stopped
+    ports:
+      - "${CLAMAV_PORT:-3310}:3310"
+    volumes:
+      - clamav_db:/var/lib/clamav
+    environment:
+      # Refresh signatures daily. The image runs freshclam itself; this bounds
+      # how stale the database can get without a restart.
+      CLAMAV_NO_FRESHCLAM: "false"
+      FRESHCLAM_CHECKS: "24"
+    healthcheck:
+      # `clamdcheck` is the image's own readiness probe and correctly waits for
+      # the signature database to finish loading — a plain port check would pass
+      # while clamd is still unusable.
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      # Generous: the first boot downloads ~200MB of signatures.
+      start_period: 300s
+
+  # Optional: run the API in Docker instead of on the host.
+  api:
+    profiles: ["app"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tailieu-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-tailieu}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tailieu}
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://seaweedfs:8333
+    ports:
+      - "${API_PORT:-4000}:4000"
+
+volumes:
+  postgres_data:
+  redis_data:
+  seaweedfs_data:
+  clamav_db:

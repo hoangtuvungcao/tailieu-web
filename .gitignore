@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment — never commit real secrets
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.swp
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+# Local data volumes (if bind-mounted instead of named volumes)
+.data/
+
+# Backups — must never enter git
+backups/
+*.dump
+*.sql.gz
+
+# Misc
+.cache/
+tmp/

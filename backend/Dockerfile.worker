@@ -1,0 +1,76 @@
+# =============================================================================
+# TAILIEU TTN — Office -> PDF conversion worker
+# =============================================================================
+# Runs LibreOffice headless to turn docx/pptx/xlsx into previewable PDFs.
+#
+# Why a separate container rather than a library in the API process:
+#   - soffice is a large native dependency; the API image stays slim
+#   - conversion spikes CPU and RAM, and a runaway document must not be able
+#     to take the request-serving process down with it
+#   - it scales independently (CONVERTER_CONCURRENCY) on a laptop
+# =============================================================================
+
+FROM node:20-bookworm-slim AS base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NODE_ENV=production \
+    HOME=/tmp
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        tini \
+        # LibreOffice components — one per format family we convert.
+        libreoffice-writer \
+        libreoffice-impress \
+        libreoffice-calc \
+        # Fonts matter: without a font covering Vietnamese diacritics,
+        # LibreOffice silently renders "công nghệ" as boxes or drops the
+        # diacritics entirely, producing a PDF that looks corrupted.
+        fonts-dejavu \
+        fonts-liberation \
+        fonts-noto-core \
+        fonts-noto-extra \
+        # LibreOffice needs a writable HOME for its profile and a JRE for
+        # some filter paths; without these, conversion fails opaquely.
+        default-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+
+# NODE_ENV is set to `production` near the top of this file, and npm honours it
+# by SKIPPING devDependencies. That silently omitted the TypeScript compiler and
+# the runtime that were needed to start the worker at all. Overriding it here
+# for the install and build only, then pruning afterwards.
+RUN NODE_ENV=development npm ci --no-audit --no-fund || NODE_ENV=development npm install --no-audit --no-fund
+
+COPY tsconfig.json tsconfig.build.json ./
+COPY src ./src
+# The build script runs `tsx scripts/copy-sql.ts`, which tsc does not emit.
+COPY scripts ./scripts
+
+# Compile, then drop the build-time dependencies. Running TypeScript through a
+# runtime loader in production costs startup time and ships a compiler into an
+# image that also parses untrusted documents — neither is worth it.
+RUN NODE_ENV=development npm run build \
+    && npm prune --omit=dev
+
+RUN useradd --system --uid 10002 --create-home --shell /usr/sbin/nologin converter \
+    && mkdir -p /tmp/lo-profile /tmp/convert /tmp/npm-cache \
+    && chown -R converter:converter /app /tmp/lo-profile /tmp/convert /tmp/npm-cache
+USER converter
+
+# Point npm at a cache the runtime user owns. Without this, `npx` aborts with
+# "Your cache folder contains root-owned files" — the cache directory was
+# created by root during the build, and the worker runs unprivileged.
+ENV npm_config_cache=/tmp/npm-cache
+
+# Warm the LibreOffice profile at build time. The first soffice invocation
+# creates a user profile and is dramatically slower; paying it here keeps the
+# first real conversion from timing out.
+RUN soffice --headless --terminate_after_init || true
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "/app/dist/workers/converter/index.js"]

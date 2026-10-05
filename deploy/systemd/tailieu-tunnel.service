@@ -1,0 +1,34 @@
+[Unit]
+Description=Cloudflare Tunnel for TAILIEU TTN API
+Documentation=https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+After=network-online.target tailieu-api.service
+Wants=network-online.target
+# Start the tunnel only after the API is up, so the first requests through the
+# public hostname don't 502.
+After=tailieu-api.service
+
+[Service]
+Type=notify
+User=cloudflared
+Group=cloudflared
+
+# Tunnel credentials + config live outside the repo.
+#   /etc/cloudflared/cert.pem          (origin cert from `cloudflared tunnel login`)
+#   /etc/cloudflared/<UUID>.json       (tunnel credentials)
+#   /etc/cloudflared/config.yml        (ingress rules)
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
+
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

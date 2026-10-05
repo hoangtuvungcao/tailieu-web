@@ -1,0 +1,51 @@
+[Unit]
+Description=TAILIEU TTN API (Fastify)
+Documentation=https://github.com/hoangtuvungcao/tailieu-web
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=tailieu
+Group=tailieu
+WorkingDirectory=/opt/tailieu/backend
+
+# Secrets live outside the repo, readable only by the service user.
+# Create with: install -m 600 .env.production.example /etc/tailieu/api.env
+EnvironmentFile=/etc/tailieu/api.env
+
+ExecStart=/usr/bin/node /opt/tailieu/backend/dist/server.js
+
+Restart=always
+RestartSec=5
+# If it crash-loops 10 times in 5 minutes, stop rather than thrash.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+# --- Hardening ---------------------------------------------------------------
+# The API needs no privileges at all: it talks to Postgres/Redis/MinIO over
+# the network and writes nothing to disk except logs.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictSUIDSGID=true
+RemoveIPC=true
+# Only /var/log/tailieu is writable; everything else is read-only.
+ReadWritePaths=/var/log/tailieu
+
+StandardOutput=append:/var/log/tailieu/api.log
+StandardError=append:/var/log/tailieu/api.error.log
+SyslogIdentifier=tailieu-api
+
+[Install]
+WantedBy=multi-user.target
