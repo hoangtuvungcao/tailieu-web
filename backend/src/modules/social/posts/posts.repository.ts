@@ -4,6 +4,7 @@ import { db, type Database } from '../../../db/client.js';
 import { follows, postLikes, postTags, posts, tags, users } from '../../../db/schema/index.js';
 import { toOffset, type PaginationInput } from '../../../lib/pagination.js';
 import { postVisibilityPredicate, type Viewer } from '../shared/visibility.js';
+import { encodeCursor } from '../../../lib/cursor.js';
 
 export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 export type Executor = Tx | typeof db;
@@ -87,22 +88,55 @@ export interface PostListOptions {
   /** Only posts by accounts this viewer follows. */
   followingOnly?: boolean;
   sort?: 'newest' | 'popular';
+  /** Keyset position. Only honoured for the `newest` sort — see `listPosts`. */
+  cursor?: { createdAt: string; id: string } | null;
+  /**
+   * Whether the caller wants keyset paging.
+   *
+   * Explicit rather than inferred from `cursor` being present: the first page
+   * of a walk has no cursor and still has to come back in cursor shape, or
+   * there is no way to start one.
+   */
+  wantCursor?: boolean;
+}
+
+export interface PostPage {
+  items: PostRow[];
+  /** Present only when paging by cursor. */
+  nextCursor: string | null;
+  /** Present only when paging by offset, which is the only mode that counts. */
+  total: number | null;
 }
 
 /**
- * Paginated post list.
+ * Post list, by cursor or by offset.
  *
- * `cursor` is `(created_at, id)` from the last row of the previous page —
- * keyset pagination, not OFFSET. With OFFSET, a post published while the reader
- * is on page 2 shifts everything down and page 3 repeats a row they already
- * saw. The `id` tiebreaker matters because two posts can share a millisecond.
+ * TWO PAGINATION MODES, and the reason is that they answer different questions.
+ *
+ * `cursor` is keyset pagination on `(created_at, id)`, served directly by
+ * `posts_recent_idx`. It is what the feed uses: with OFFSET, a post published
+ * while the reader is on page 2 shifts everything down and page 3 repeats a row
+ * they already saw — which for a feed people leave open is not an edge case,
+ * it is the normal case. The `id` tiebreaker matters because two posts can
+ * share a millisecond, and comparing on the timestamp alone would skip or
+ * repeat everything that landed in the same one.
+ *
+ * `page` remains for the browse-and-filter surfaces (a profile's posts, an
+ * author filter) where the reader wants "1,247 results" and the result set is
+ * not moving underneath them. That trade is argued in `lib/pagination.ts`.
+ *
+ * A cursor is IGNORED for the `popular` sort, deliberately. `hot_score` changes
+ * with every like, so a position in that ordering is not stable — a cursor into
+ * it would skip rows that moved up and repeat rows that moved down. Popular
+ * pagination stays on offset, where a repeated row is possible and a silent
+ * omission is not.
  */
 export async function listPosts(
   options: PostListOptions,
   pagination: PaginationInput,
   viewer: Viewer,
   executor: Executor = db,
-) {
+): Promise<PostPage> {
   const predicates: SQL[] = [postVisibilityPredicate(viewer)];
 
   if (options.authorUserId) predicates.push(eq(posts.authorUserId, options.authorUserId));
@@ -119,7 +153,8 @@ export async function listPosts(
     );
   }
 
-  const where = and(...predicates)!;
+  const cursor = options.cursor ?? null;
+  const keyset = Boolean(options.wantCursor) && options.sort !== 'popular';
 
   // Popular sorts on the stored engagement score, which carries no time term —
   // that is what makes it indexable. Recency is applied as a tiebreak rather
@@ -129,6 +164,39 @@ export async function listPosts(
     options.sort === 'popular'
       ? [desc(posts.hotScore), desc(posts.createdAt), desc(posts.id)]
       : [desc(posts.createdAt), desc(posts.id)];
+
+  if (keyset) {
+    if (cursor) {
+      // A row-value comparison, which Postgres matches against the composite
+      // index rather than sorting and filtering.
+      predicates.push(
+        sql`(${posts.createdAt}, ${posts.id}) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`,
+      );
+    }
+
+    const where = and(...predicates)!;
+
+    // One row beyond the page, so "is there more" needs no second query. This
+    // is the half of OFFSET that hurts most on a deep page: counting the whole
+    // result set to render a number the reader is not looking at.
+    const rows = await baseQuery(executor)
+      .where(where)
+      .orderBy(...order)
+      .limit(pagination.limit + 1);
+
+    const page = rows.slice(0, pagination.limit);
+    const items = page.map((r) => normalise(r as Record<string, unknown>));
+    const last = items.at(-1);
+
+    return {
+      items,
+      nextCursor:
+        rows.length > pagination.limit && last ? encodeCursor(last.createdAt, last.id) : null,
+      total: null,
+    };
+  }
+
+  const where = and(...predicates)!;
 
   const [rows, [totalRow]] = await Promise.all([
     baseQuery(executor)
@@ -141,6 +209,7 @@ export async function listPosts(
 
   return {
     items: rows.map((r) => normalise(r as Record<string, unknown>)),
+    nextCursor: null,
     total: Number(totalRow?.value ?? 0),
   };
 }
@@ -166,6 +235,133 @@ export async function findPostUnscoped(id: string, executor: Executor = db): Pro
 
   const row = rows[0];
   return row ? normalise(row as Record<string, unknown>) : null;
+}
+
+/**
+ * Posts by id, filtered by the viewer's predicate, in the order they were given.
+ *
+ * Order is preserved rather than left to the planner: the ids come from a
+ * trending list, and that list *is* the ranking. Rendering them in whatever
+ * order `IN` happens to return would silently replace the ranking with an
+ * arbitrary one.
+ *
+ * An id that does not come back is one this viewer may not see — normal here
+ * rather than a bug, because something that trended an hour ago can have been
+ * hidden or deleted since. Unlike a collection, a shorter trending list is the
+ * honest answer rather than a signal that two filters disagree.
+ */
+export async function findPostsByIds(
+  ids: string[],
+  viewer: Viewer,
+  executor: Executor = db,
+): Promise<PostRow[]> {
+  if (ids.length === 0) return [];
+
+  const rows = await baseQuery(executor).where(
+    and(inArray(posts.id, ids), postVisibilityPredicate(viewer)),
+  );
+
+  const byId = new Map(rows.map((r) => [r.id, normalise(r as Record<string, unknown>)]));
+  return ids
+    .map((id) => byId.get(id))
+    .filter((row): row is PostRow => Boolean(row));
+}
+
+/**
+ * The SQL answer when Redis cannot provide one.
+ *
+ * Bounded to a recent window on purpose. `hot_score` is cumulative, so an
+ * unbounded ordering returns the same all-time favourites forever and the
+ * "trending" label becomes a lie. Bounded, it means "recently engaged with" —
+ * a worse signal than the ZSET union, but an honest one, and it is served by
+ * `posts_popular_idx`.
+ */
+export async function topByHotScore(
+  limit: number,
+  viewer: Viewer,
+  days = 7,
+  executor: Executor = db,
+): Promise<PostRow[]> {
+  const rows = await baseQuery(executor)
+    .where(
+      and(
+        postVisibilityPredicate(viewer),
+        sql`${posts.createdAt} > now() - (${days} * interval '1 day')`,
+      ),
+    )
+    .orderBy(desc(posts.hotScore), desc(posts.id))
+    .limit(limit);
+
+  return rows.map((r) => normalise(r as Record<string, unknown>));
+}
+
+/**
+ * "For You" candidates.
+ *
+ * THIS IS A HEURISTIC, NOT A RECOMMENDER. There is no embedder, no model and no
+ * learned ranker here, and building one is out of scope for a stack that runs
+ * on one laptop. The score is three readable terms:
+ *
+ *   +3  the author is somebody the viewer follows
+ *   +2  the post is tagged with the viewer's own faculty
+ *   +1  the post is in the current trending set
+ *
+ * …then engagement and recency as tiebreakers. Every term is something the
+ * viewer could point at and explain, which is the property that makes it
+ * honest to show. Calling it personalised would promise something this does not
+ * do.
+ *
+ * A new account with no follows and no faculty scores everything at zero and
+ * gets a recency-and-engagement feed. That is the correct degradation, not a
+ * bug: there is nothing to personalise on yet.
+ *
+ * The sort term is computed, so it cannot be indexed and this sorts a bounded
+ * window. That is affordable because the result is a short list, not a deep
+ * cursor walk — if this ever needs paging, the score has to be materialised
+ * first.
+ */
+export async function forYouCandidates(
+  viewer: Viewer,
+  trendIds: string[],
+  limit: number,
+  executor: Executor = db,
+): Promise<PostRow[]> {
+  const followBonus = viewer.userId
+    ? sql`CASE WHEN EXISTS (
+        SELECT 1 FROM follows f
+         WHERE f.follower_user_id = ${viewer.userId}
+           AND f.followee_user_id = ${posts.authorUserId}
+           AND f.deleted_at IS NULL
+      ) THEN 3 ELSE 0 END`
+    : sql`0`;
+
+  const facultyBonus = viewer.facultyId
+    ? sql`CASE WHEN ${posts.facultyId} = ${viewer.facultyId}::uuid THEN 2 ELSE 0 END`
+    : sql`0`;
+
+  const trendBonus =
+    trendIds.length > 0
+      ? sql`CASE WHEN ${inArray(posts.id, trendIds)} THEN 1 ELSE 0 END`
+      : sql`0`;
+
+  const affinity = sql<number>`(${followBonus} + ${facultyBonus} + ${trendBonus})`;
+
+  const rows = await executor
+    .select({ ...postColumns, affinity })
+    .from(posts)
+    .innerJoin(users, eq(users.id, posts.authorUserId))
+    .where(
+      and(
+        postVisibilityPredicate(viewer),
+        // A month. Beyond that the feed is archaeology, and the window is what
+        // keeps the sort affordable.
+        sql`${posts.createdAt} > now() - interval '30 days'`,
+      ),
+    )
+    .orderBy(desc(affinity), desc(posts.hotScore), desc(posts.createdAt), desc(posts.id))
+    .limit(limit);
+
+  return rows.map((r) => normalise(r as Record<string, unknown>));
 }
 
 export async function insertPost(

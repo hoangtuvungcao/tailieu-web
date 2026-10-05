@@ -24,7 +24,11 @@ const targetParams = z.object({
 const setBookmarkBody = z
   .object({
     bookmarked: z.boolean(),
-    folder: z.string().trim().max(60).nullish().transform((v) => v ?? null),
+    // `undefined` and `null` are different requests, and collapsing them (the
+    // obvious `.nullish().transform(v => v ?? null)`) makes a folder impossible
+    // to remove once set: every "leave it alone" and every "take it out" arrived
+    // as the same value. Omitted keeps the folder; null clears it.
+    folder: z.string().trim().max(60).nullable().optional(),
   })
   .strict();
 

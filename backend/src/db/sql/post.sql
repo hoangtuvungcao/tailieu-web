@@ -377,16 +377,15 @@ ALTER TABLE reputation_events
 -- platform, where the unaccented form is what people type — and it is what the
 -- service-side pre-check compares with, so the two agree exactly.
 
-DROP INDEX IF EXISTS collections_owner_title_uq;
-CREATE UNIQUE INDEX collections_owner_title_uq
-  ON collections (owner_user_id, lower(immutable_unaccent(title)))
-  WHERE deleted_at IS NULL;
-
--- The identical defect, found while fixing the one above. Nothing writes to
--- this table yet, so it is latent rather than broken in production — which is
--- exactly why it is worth correcting now, while "no data depends on the old
--- behaviour" is still true.
-DROP INDEX IF EXISTS saved_searches_uq;
-CREATE UNIQUE INDEX saved_searches_uq
-  ON saved_searches (user_id, lower(immutable_unaccent(label)))
-  WHERE deleted_at IS NULL;
+-- The identical defect appears in `saved_searches_uq`, found while fixing the
+-- one above. Nothing writes to that table yet, so it is latent rather than
+-- broken in production — which is exactly why it was worth correcting while
+-- "no data depends on the old behaviour" was still true.
+--
+-- Both definitions live in the Drizzle schema (`db/schema/social/engagement.ts`)
+-- and reach the database through the generated migrations. They are deliberately
+-- NOT restated here. A second copy of a schema object in this file is a
+-- definition no migration knows about, and the two drift apart silently — which
+-- is precisely the failure the section above describes. This file is for what
+-- the schema DSL cannot express: triggers, functions and CHECK constraints. An
+-- index is not one of those.

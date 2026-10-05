@@ -27,6 +27,14 @@ export type BookmarkTarget = 'document' | 'post' | 'collection';
  * Restore-on-rebookmark, matching likes and follows: re-bookmarking clears
  * `deleted_at` rather than inserting a second row, so the partial unique stays
  * meaningful and no duplicate accumulates.
+ *
+ * `folder` is three-valued, and the distinction is the whole point:
+ *   `undefined` — leave whatever folder it is in alone
+ *   `null`      — take it out of any folder
+ *   a string    — file it there
+ *
+ * Treating `undefined` as `null` is what made a folder impossible to remove:
+ * the "set" and "clear" requests were byte-identical by the time they arrived.
  */
 export async function setBookmark(
   tx: Tx,
@@ -34,10 +42,10 @@ export async function setBookmark(
   targetType: BookmarkTarget,
   targetId: string,
   desired: boolean,
-  folder: string | null,
+  folder: string | null | undefined,
 ): Promise<boolean> {
   const [existing] = await tx
-    .select({ id: bookmarks.id, deletedAt: bookmarks.deletedAt })
+    .select({ id: bookmarks.id, deletedAt: bookmarks.deletedAt, folder: bookmarks.folder })
     .from(bookmarks)
     .where(
       and(
@@ -50,20 +58,20 @@ export async function setBookmark(
 
   if (desired) {
     if (!existing) {
-      await tx.insert(bookmarks).values({ userId, targetType, targetId, folder });
+      await tx.insert(bookmarks).values({ userId, targetType, targetId, folder: folder ?? null });
       return true;
     }
     if (existing.deletedAt === null) {
       // Already bookmarked. The folder may still have changed — moving a
       // bookmark between folders is a real edit that should not be a no-op.
-      if (folder !== null) {
+      if (folder !== undefined) {
         await tx.update(bookmarks).set({ folder }).where(eq(bookmarks.id, existing.id));
       }
       return false;
     }
     await tx
       .update(bookmarks)
-      .set({ deletedAt: null, folder })
+      .set({ deletedAt: null, folder: folder === undefined ? existing.folder : folder })
       .where(eq(bookmarks.id, existing.id));
     return true;
   }
@@ -137,8 +145,19 @@ export async function listBookmarks(
   return { items: rows, total: Number(totalRow?.value ?? 0) };
 }
 
-/** Distinct folders, for the sidebar. */
-export async function listFolders(userId: string, executor: Executor = db) {
+/**
+ * Distinct folders with their counts, for the sidebar.
+ *
+ * `targetVisibility` is the same fragment `listBookmarks` filters on, and it is
+ * required rather than optional on purpose. A caller that forgot it would get a
+ * count including items it cannot show, and a count that is too large is the
+ * kind of wrong that looks like a loading bug rather than a permission one.
+ */
+export async function listFolders(
+  userId: string,
+  targetVisibility: SQL,
+  executor: Executor = db,
+) {
   const rows = await executor
     .select({ folder: bookmarks.folder, total: sql<number>`count(*)::int` })
     .from(bookmarks)
@@ -147,6 +166,7 @@ export async function listFolders(userId: string, executor: Executor = db) {
         eq(bookmarks.userId, userId),
         isNull(bookmarks.deletedAt),
         sql`${bookmarks.folder} IS NOT NULL`,
+        targetVisibility,
       ),
     )
     .groupBy(bookmarks.folder)

@@ -1,6 +1,9 @@
 import { db } from '../../../db/client.js';
 import { AppError } from '../../../lib/errors.js';
-import { paginate, type PaginationInput } from '../../../lib/pagination.js';
+import { decodeCursor } from '../../../lib/cursor.js';
+import { paginate, paginationMeta, type PaginationInput } from '../../../lib/pagination.js';
+import { isoDateTimeOrNull as iso } from '../shared/dates.js';
+import type { SocialActor } from '../shared/actor.js';
 import type { Viewer } from '../shared/visibility.js';
 import * as repo from './posts.repository.js';
 import type { createPostSchema, listPostsQuerySchema, updatePostSchema } from './posts.schema.js';
@@ -13,12 +16,6 @@ import type { z } from 'zod';
  * their own post; a moderator within scope may hide it; nobody else may touch
  * it.
  */
-
-export interface SocialActor {
-  userId: string;
-  viewer: Viewer;
-  permissions: Set<string>;
-}
 
 export interface PostDto {
   id: string;
@@ -37,11 +34,6 @@ export interface PostDto {
   createdAt: string;
   editedAt: string | null;
   permissions: { canEdit: boolean; canDelete: boolean; canModerate: boolean };
-}
-
-function iso(value: Date | string | null): string | null {
-  if (value === null) return null;
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function toDto(
@@ -86,19 +78,56 @@ function toDto(
   };
 }
 
+/**
+ * Turn a set of post rows into DTOs for one viewer.
+ *
+ * Exported because the ranked feed renders the same posts and must not grow a
+ * second hydration path — tags and liked-state fetched per post is the N+1 this
+ * collapses, and a second copy of it would be a second place to reintroduce it.
+ */
+export async function toDtos(
+  rows: repo.PostRow[],
+  actor: SocialActor | null,
+): Promise<PostDto[]> {
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((row) => row.id);
+  const [tagMap, likedIds] = await Promise.all([
+    repo.findTagsForPosts(ids),
+    repo.findLikedPostIds(ids, actor?.userId ?? null),
+  ]);
+
+  return rows.map((row) => toDto(row, actor, tagMap.get(row.id) ?? [], likedIds.has(row.id)));
+}
+
 export async function listPosts(
   filters: z.infer<typeof listPostsQuerySchema>,
-  pagination: PaginationInput,
   actor: SocialActor | null,
 ) {
   const viewer = actor?.viewer ?? { userId: null, isModerator: false, facultyIds: [] };
 
-  const { items, total } = await repo.listPosts(
+  // Whether the caller sent `page` IS the mode: present means numbered pages
+  // with a total, absent means the feed's keyset walk.
+  const pageMode = filters.page !== undefined;
+  const pagination: PaginationInput = { page: filters.page ?? 1, limit: filters.limit };
+
+  // Decoded rather than passed through. A malformed cursor is a bad request,
+  // and letting it fall back to page 1 would make a broken link look like a
+  // refresh — the reader would scroll from the top again and never know why.
+  let cursor: { createdAt: string; id: string } | null = null;
+  if (filters.cursor) {
+    cursor = decodeCursor(filters.cursor);
+    if (!cursor) throw new AppError('BAD_REQUEST', 'Con trỏ không hợp lệ.');
+  }
+
+  const page = await repo.listPosts(
     {
       authorUserId: filters.authorUserId,
       facultyId: filters.facultyId,
       followingOnly: filters.following,
       sort: filters.sort,
+      cursor,
+      wantCursor: !pageMode,
     },
     pagination,
     viewer,
@@ -107,17 +136,16 @@ export async function listPosts(
   // Tags and liked-state fetched for the whole page in two queries, not two per
   // post. A 20-post page doing 40 extra round trips is invisible until it is
   // the slowest thing on the site.
-  const ids = items.map((p) => p.id);
-  const [tagMap, likedIds] = await Promise.all([
-    repo.findTagsForPosts(ids),
-    repo.findLikedPostIds(ids, actor?.userId ?? null),
-  ]);
+  const items = await toDtos(page.items, actor);
 
-  return paginate(
-    items.map((row) => toDto(row, actor, tagMap.get(row.id) ?? [], likedIds.has(row.id))),
-    total,
-    pagination,
-  );
+  // The two modes report different things, because they can. A cursor page
+  // knows there is more without counting anything; an offset page is asked for
+  // "how many" and cannot answer without the count.
+  if (page.total === null) {
+    return { items, meta: { limit: pagination.limit, nextCursor: page.nextCursor } };
+  }
+
+  return { items, meta: paginationMeta(paginate([], page.total, pagination)) };
 }
 
 export async function getPost(id: string, actor: SocialActor | null): Promise<PostDto> {

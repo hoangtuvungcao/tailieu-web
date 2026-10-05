@@ -288,6 +288,8 @@ export const userBadges = pgTable(
 export const leaderboardRunningTotals = pgTable(
   'leaderboard_running_totals',
   {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+
     periodType: leaderboardPeriodEnum('period_type').notNull(),
     /** `'2026-10'`, or the semester's id. No new time concept invented. */
     periodKey: text('period_key').notNull(),
@@ -303,17 +305,25 @@ export const leaderboardRunningTotals = pgTable(
   },
   (t) => [
     /**
-     * Primary key with `NULLS NOT DISTINCT`.
+     * A unique CONSTRAINT with `NULLS NOT DISTINCT` — NOT a primary key over
+     * these five columns.
      *
-     * Without it, `scope_id NULL` (the university row) would be considered
-     * distinct from itself and every UPSERT would insert a duplicate instead of
-     * accumulating — a bug that silently makes the leaderboard count each
-     * event as a separate row.
+     * A primary key column is implicitly NOT NULL in Postgres, so including
+     * `scope_id` in one makes the university-wide row — the row whose
+     * `scope_id IS NULL`, which is the main reason this table exists —
+     * impossible to insert at all. The declaration read as though null were
+     * allowed and the database disagreed, and nothing caught it because no code
+     * had ever written a row: the failure is a not-null violation on the first
+     * reputation event rather than anything a schema review surfaces.
+     *
+     * `NULLS NOT DISTINCT` is still required, for the same reason the snapshot
+     * table below needs it: without it `scope_id NULL` would be considered
+     * distinct from itself, and every UPSERT would insert another row instead
+     * of accumulating — silently counting one member once per event.
      */
-    primaryKey({
-      columns: [t.periodType, t.periodKey, t.scopeType, t.scopeId, t.userId],
-      name: 'leaderboard_running_totals_pk',
-    }),
+    unique('leaderboard_running_totals_uq')
+      .on(t.periodType, t.periodKey, t.scopeType, t.scopeId, t.userId)
+      .nullsNotDistinct(),
     index('leaderboard_running_totals_top_idx').on(
       t.periodType,
       t.periodKey,

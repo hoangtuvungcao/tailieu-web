@@ -22,8 +22,10 @@ import {
 export async function listPosts(request: FastifyRequest, reply: FastifyReply) {
   const actor = await buildActor(request);
   const query = parseQuery(listPostsQuerySchema, request.query);
-  const result = await service.listPosts(query, query, actor);
-  return reply.ok(result.items, paginationMeta(result));
+  const result = await service.listPosts(query, actor);
+  // The service builds the meta, because the two pagination modes report
+  // different things — a cursor page has a `nextCursor` and no total.
+  return reply.ok(result.items, result.meta);
 }
 
 export async function getPost(request: FastifyRequest, reply: FastifyReply) {

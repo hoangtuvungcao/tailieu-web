@@ -4,7 +4,9 @@ import { db } from '../../../db/client.js';
 import { AppError } from '../../../lib/errors.js';
 import { comments, documents, posts } from '../../../db/schema/index.js';
 import { adjustCounter, refreshPostHotScore } from '../shared/counters.js';
+import { recordTrendSignal, TREND_WEIGHTS } from '../feed/trending.js';
 import { notify } from '../notifications/notifications.service.js';
+import { award } from '../reputation/reputation.service.js';
 import { documentVisibilityPredicate, postVisibilityPredicate } from '../shared/visibility.js';
 import type { SocialActor } from '../shared/actor.js';
 import * as repo from './likes.repository.js';
@@ -94,16 +96,19 @@ export async function setLike(
 ): Promise<LikeResult> {
   const info = await resolveTarget(target, targetId, actor);
 
-  return db.transaction(async (tx) => {
+  // Declared outside the transaction so it survives to the code below, which
+  // runs after the commit.
+  let changed = false;
+
+  const result = await db.transaction(async (tx) => {
     // Liking your own content is not an error — it is just pointless and must
     // not earn reputation or notify you about yourself. The database CHECK
     // rejects a self-notification, and `notify` returns early; the counter
     // still moves, because the like is real.
-    let changed = false;
 
     if (desired) {
-      const result = await repo.upsertLike(tx, target, targetId, actor.userId);
-      changed = result === 'created';
+      const upsert = await repo.upsertLike(tx, target, targetId, actor.userId);
+      changed = upsert === 'created';
     } else {
       changed = await repo.removeLike(tx, target, targetId, actor.userId);
     }
@@ -143,11 +148,53 @@ export async function setLike(
         // content to someone whose access was revoked after the fact.
         payload: {},
       });
+
+      // Credited once per thing, not once per like event. The dedupe key is what
+      // makes unliking and re-liking worth nothing extra — so the cheapest
+      // farming loop in any points system costs the farmer and pays zero.
+      //
+      // Nothing is debited on unlike, deliberately. Unliking is not a
+      // retraction of judgement, it is usually a misclick; taking points back
+      // would make a stray tap cost the author. A moderator taking content down
+      // is a different act, and goes through `revoke` instead.
+      await award(tx, {
+        userId: info.ownerUserId,
+        actorUserId: actor.userId,
+        reason: target === 'comment' ? 'comment_like_received' : 'like_received',
+        sourceType: target,
+        sourceId: targetId,
+        dedupeKey: `like:${target}:${targetId}:v1`,
+      });
     }
 
     const likeCount = await repo.countLikes(tx, target, targetId);
     return { liked: desired, likeCount };
   });
+
+  // AFTER the commit, not inside it. Recording a trend signal is a call to
+  // another service, and holding a database transaction open across a network
+  // round trip is how a slow Redis becomes a lock on the posts table. The cost
+  // of losing a signal is a slightly staler ranking in a list that is a
+  // heuristic anyway.
+  //
+  // Only on a like, never on an unlike. The signal means "somebody engaged with
+  // this", and they did — the same reason reputation is not debited on unlike.
+  // Decrementing would also make like/unlike cycling a way to push a post down.
+  //
+  // And never on your own post, the same rule the reputation system enforces.
+  // A self-like is a real like and the counter moves, but as a *ranking* signal
+  // it is worth nothing: otherwise the cheapest way onto the trending list is
+  // to like everything you wrote.
+  //
+  // Note that the SQL fallback ranks on `hot_score`, which does count self-likes
+  // — so the two lists differ slightly. That is the fallback's nature rather
+  // than an oversight: it is a different question ("recently engaged") asked
+  // with the only tool available when Redis is down.
+  if (changed && desired && target === 'post' && info.ownerUserId !== actor.userId) {
+    await recordTrendSignal(targetId, TREND_WEIGHTS.like);
+  }
+
+  return result;
 }
 
 /** Whether the viewer likes this, without changing anything. */

@@ -2,6 +2,8 @@ import { db } from '../../../db/client.js';
 import { AppError } from '../../../lib/errors.js';
 import { paginate, paginationMeta, type PaginationInput } from '../../../lib/pagination.js';
 import { adjustCounter } from '../shared/counters.js';
+import { isoDateTime as iso } from '../shared/dates.js';
+import { hydrateTargets, type TargetSummary } from '../shared/hydrate.js';
 import { assertTargetVisibleTo } from '../shared/targets.js';
 import type { SocialActor } from '../shared/actor.js';
 import type { Viewer } from '../shared/visibility.js';
@@ -23,24 +25,18 @@ import type { z } from 'zod';
  * items above a list of ten.
  */
 
-export interface CollectionItemTargetDto {
-  type: 'document' | 'post' | 'collection';
-  id: string;
-  title: string;
-  /** What the card's second line says: the author or owner. */
-  owner: { id: string; displayName: string; avatarUrl: string | null };
-  visibility: string;
-  fileKind: string | null;
-  sizeBytes: number | null;
-  stats: { likes: number; comments: number; items: number };
-}
-
+/**
+ * `target` is the shared `TargetSummary` rather than a type declared here.
+ * Bookmarks render the same card for the same pointers, so the shape lives in
+ * one place — two declarations would be two places for "what a post card shows"
+ * to drift apart.
+ */
 export interface CollectionItemDto {
   id: string;
   note: string | null;
   position: number;
   addedAt: string;
-  target: CollectionItemTargetDto;
+  target: TargetSummary;
 }
 
 export interface CollectionDto {
@@ -63,10 +59,6 @@ export interface CollectionDto {
   permissions: { canEdit: boolean; canDelete: boolean; canAddItem: boolean };
   /** Present on the detail response only. */
   items?: CollectionItemDto[];
-}
-
-function iso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function canModerateCollections(actor: SocialActor | null): boolean {
@@ -122,7 +114,9 @@ function permissionsFor(actor: SocialActor | null, row: repo.CollectionRow) {
 /**
  * Load the pointed-at rows for a page of items and pair them up.
  *
- * Three queries for the whole page, one per target kind, never one per item.
+ * The three queries and the mapping live in `shared/hydrate.js`, because
+ * bookmarks show the same card for the same pointers — a second copy here would
+ * be a second place for the document visibility rule to live.
  *
  * An item whose target does not come back is dropped and logged. It should be
  * impossible — `listItems` applied the same predicate — so a drop means the two
@@ -133,85 +127,7 @@ async function hydrateItems(
   items: repo.ItemRow[],
   viewer: Viewer,
 ): Promise<CollectionItemDto[]> {
-  const idsBy = { document: [] as string[], post: [] as string[], collection: [] as string[] };
-  for (const item of items) idsBy[item.targetType].push(item.targetId);
-
-  const [documents, posts, nested] = await Promise.all([
-    repo.hydrateDocuments(idsBy.document, viewer),
-    repo.hydratePosts(idsBy.post, viewer),
-    repo.hydrateCollections(idsBy.collection, viewer),
-  ]);
-
-  const hydrated: CollectionItemDto[] = [];
-  const missing: string[] = [];
-
-  for (const item of items) {
-    let target: CollectionItemTargetDto | null = null;
-
-    if (item.targetType === 'document') {
-      const row = documents.get(item.targetId);
-      if (row) {
-        target = {
-          type: 'document',
-          id: row.id,
-          title: row.title,
-          owner: { id: row.ownerId, displayName: row.ownerName ?? 'Người dùng ẩn danh', avatarUrl: row.ownerAvatar },
-          visibility: row.visibility,
-          fileKind: row.fileKind,
-          sizeBytes: row.sizeBytes === null ? null : Number(row.sizeBytes),
-          stats: { likes: 0, comments: 0, items: 0 },
-        };
-      }
-    } else if (item.targetType === 'post') {
-      const row = posts.get(item.targetId);
-      if (row) {
-        target = {
-          type: 'post',
-          id: row.id,
-          // A status post has no title. Falling back to its opening words keeps
-          // every card in the list the same shape instead of rendering a blank
-          // line where a title should be.
-          title: row.title ?? row.body.slice(0, 80),
-          owner: { id: row.authorId, displayName: row.authorName ?? 'Người dùng ẩn danh', avatarUrl: row.authorAvatar },
-          visibility: row.visibility,
-          fileKind: null,
-          sizeBytes: null,
-          stats: { likes: row.likeCount, comments: row.commentCount, items: 0 },
-        };
-      }
-    } else {
-      const row = nested.get(item.targetId);
-      if (row) {
-        target = {
-          type: 'collection',
-          id: row.id,
-          title: row.title,
-          owner: { id: row.ownerId, displayName: row.ownerName ?? 'Người dùng ẩn danh', avatarUrl: row.ownerAvatar },
-          visibility: row.visibility,
-          fileKind: null,
-          sizeBytes: null,
-          // This one number is the stored counter, not a viewer-visible count.
-          // Computing it per nested collection would mean a count query inside
-          // the hydration of a page of items, and the nested card is a link —
-          // the number is a hint of size, not a promise about the next page.
-          stats: { likes: 0, comments: 0, items: row.itemCount },
-        };
-      }
-    }
-
-    if (!target) {
-      missing.push(item.id);
-      continue;
-    }
-
-    hydrated.push({
-      id: item.id,
-      note: item.note,
-      position: item.position,
-      addedAt: iso(item.createdAt),
-      target,
-    });
-  }
+  const { summaries, missing } = await hydrateTargets(items, viewer);
 
   if (missing.length > 0) {
     // Never silent. A drop here means the item predicate and the owning
@@ -223,7 +139,22 @@ async function hydrateItems(
     );
   }
 
-  return hydrated;
+  return items.flatMap((item) => {
+    const target = summaries.get(item.id);
+    // Dropping rather than rendering a card with a blank title. The warning
+    // above is what keeps that from being invisible.
+    return target
+      ? [
+          {
+            id: item.id,
+            note: item.note,
+            position: item.position,
+            addedAt: iso(item.createdAt),
+            target,
+          },
+        ]
+      : [];
+  });
 }
 
 /**

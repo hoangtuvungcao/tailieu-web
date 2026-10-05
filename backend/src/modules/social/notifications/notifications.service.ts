@@ -30,6 +30,7 @@ export type NotificationKind =
   | 'post_like'
   | 'comment_like'
   | 'post_comment'
+  | 'document_comment'
   | 'comment_reply'
   | 'follow'
   | 'document_like'

@@ -139,10 +139,14 @@ export const collections = pgTable(
      * only in capitalisation is never what the user meant.
      *
      * The `immutable_unaccent` call is not decoration. This cluster runs with
-     * LC_COLLATE=C, where `lower()` folds ASCII only — `lower('Ôn thi')` returns
-     * 'Ôn thi' unchanged, so a plain `lower(title)` index would happily accept
-     * both spellings. See the matching note in `sql/post.sql`, which creates
-     * the index this declaration mirrors.
+     * LC_COLLATE=C, where `lower()` folds ASCII only — measured on this
+     * cluster, `SELECT lower('Ôn thi'), lower('ôn thi')` returns both strings
+     * unchanged and unequal, so a plain `lower(title)` index would happily
+     * accept both spellings.
+     *
+     * This declaration is the only definition of the index: it reaches the
+     * database through the generated migrations, and `sql/post.sql` does not
+     * restate it.
      */
     uniqueIndex('collections_owner_title_uq')
       .on(t.ownerUserId, sql`lower(immutable_unaccent(title))`)

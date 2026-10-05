@@ -2,7 +2,10 @@ import { sql, type SQL } from 'drizzle-orm';
 
 import { db } from '../../../db/client.js';
 import { paginate, type PaginationInput } from '../../../lib/pagination.js';
+import { recordTrendSignal, TREND_WEIGHTS } from '../feed/trending.js';
 import type { SocialActor } from '../shared/actor.js';
+import { isoDateTime as iso } from '../shared/dates.js';
+import { hydrateTargets, type TargetSummary } from '../shared/hydrate.js';
 import { assertTargetVisibleTo } from '../shared/targets.js';
 import {
   collectionVisibilityPredicate,
@@ -70,16 +73,22 @@ export async function setBookmark(
   target: BookmarkTarget,
   targetId: string,
   desired: boolean,
-  folder: string | null,
+  folder: string | null | undefined,
   actor: SocialActor,
 ): Promise<{ bookmarked: boolean }> {
   // Bookmarking something you cannot see is neither useful nor harmless: it
   // would confirm the target exists.
   if (desired) await assertTargetVisible(target, targetId, actor);
 
-  await db.transaction(async (tx) => {
-    await repo.setBookmark(tx, actor.userId, target, targetId, desired, folder);
+  const changed = await db.transaction(async (tx) => {
+    return repo.setBookmark(tx, actor.userId, target, targetId, desired, folder);
   });
+
+  // Only for posts, and only when something actually changed — a repeated
+  // bookmark of the same post is not fresh engagement.
+  if (changed && desired && target === 'post') {
+    await recordTrendSignal(targetId, TREND_WEIGHTS.bookmark);
+  }
 
   return { bookmarked: desired };
 }
@@ -93,6 +102,14 @@ export async function getBookmarkState(
   return { bookmarked: await repo.isBookmarked(db, actor.userId, target, targetId) };
 }
 
+export interface BookmarkItemDto {
+  id: string;
+  folder: string | null;
+  savedAt: string;
+  /** The shared card shape — the same one collections render for a pointer. */
+  target: TargetSummary;
+}
+
 export async function listBookmarks(
   pagination: PaginationInput,
   folder: string | undefined,
@@ -102,9 +119,37 @@ export async function listBookmarks(
   // access to disappears from the list rather than being hidden by the client.
   const visible = bookmarkTargetVisible(actor.viewer);
   const { items, total } = await repo.listBookmarks(actor.userId, pagination, visible, folder);
-  return paginate(items, total, pagination);
+
+  // This list used to come back as bare pointers — `{ targetType, targetId }`
+  // and nothing else. Safe, because the filter above ran, but not renderable:
+  // no title, no owner, nothing a page could show. The titles come from the
+  // shared hydrator, which applies each owning module's predicate a second time.
+  const { summaries, missing } = await hydrateTargets(items, actor.viewer);
+
+  if (missing.length > 0) {
+    // Should be impossible — the identical predicates just filtered this page.
+    // A drop means the two disagree about the same row, and the safe direction
+    // (fewer rows) is also the invisible one.
+    console.warn(
+      `[bookmarks] ${missing.length} bookmark(s) passed the visibility filter but were filtered out during hydration: ${missing.join(', ')}`,
+    );
+  }
+
+  const hydrated: BookmarkItemDto[] = items.flatMap((item) => {
+    const target = summaries.get(item.id);
+    return target
+      ? [{ id: item.id, folder: item.folder, savedAt: iso(item.createdAt), target }]
+      : [];
+  });
+
+  return paginate(hydrated, total, pagination);
 }
 
 export async function listFolders(actor: SocialActor) {
-  return repo.listFolders(actor.userId);
+  // The same predicate the list uses, for the same reason. Counting every row
+  // in a folder — including bookmarks whose targets the reader has since lost
+  // access to — would put "Ôn thi (5)" above a list of three, which is the
+  // defect this module already went to some trouble to avoid in the list
+  // itself.
+  return repo.listFolders(actor.userId, bookmarkTargetVisible(actor.viewer));
 }

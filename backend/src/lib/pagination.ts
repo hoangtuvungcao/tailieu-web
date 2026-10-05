@@ -3,12 +3,17 @@ import { z } from 'zod';
 /**
  * Pagination.
  *
- * Offset pagination rather than cursors, chosen deliberately: the UI needs page
- * numbers and total counts ("1,247 documents across 63 pages"), and every list
- * in the application is sorted by a stable column. Cursors would be faster at
- * the deepest pages but cannot answer "how many are there?" without a second
- * query, and an academic library is a browse-and-filter interface, not an
- * infinite social feed.
+ * OFFSET BY DEFAULT, chosen deliberately: most lists here are browse-and-filter
+ * interfaces that want page numbers and a total ("1,247 documents across 63
+ * pages"), and cursors cannot answer "how many are there?" without a second
+ * query.
+ *
+ * The exceptions are the social feeds, which page by keyset cursor instead —
+ * see `lib/cursor.ts` and `posts.repository.ts`. A feed is read while it is
+ * being written to, so a post published mid-read shifts every later row down
+ * and OFFSET hands the reader a repeat and hides the row that was pushed over
+ * the boundary. Those endpoints select the mode by whether `page` is sent; this
+ * module defines only the offset half.
  *
  * The limit is capped so that a crafted `?limit=1000000` cannot be used to
  * exhaust memory or dump the table.

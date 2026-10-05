@@ -1,19 +1,11 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { db, type Database } from '../../../db/client.js';
-import {
-  collectionItems,
-  collections,
-  documents,
-  posts,
-  users,
-} from '../../../db/schema/index.js';
+import { collectionItems, collections, users } from '../../../db/schema/index.js';
 import { toOffset, type PaginationInput } from '../../../lib/pagination.js';
 import {
   collectionItemVisibleTo,
   collectionVisibilityPredicate,
-  documentVisibilityPredicate,
-  postVisibilityPredicate,
   type Viewer,
 } from '../shared/visibility.js';
 
@@ -526,129 +518,9 @@ export async function applyOrder(
   `);
 }
 
-// =============================================================================
-// Hydration
-// =============================================================================
-
-/**
- * The pointed-at rows for a page of items, each filtered by its own module's
- * visibility rule.
- *
- * The second application of the rule. `listItems` already filtered, so in a
- * correct system nothing here is dropped — but "correct" is the assumption
- * being tested, and the cost of being wrong is a private document's title in a
- * public collection's HTML. Anything missing from the returned maps is a signal,
- * and the service logs it rather than quietly shrinking the list.
- */
-export interface DocumentTargetRow {
-  id: string;
-  title: string;
-  visibility: string;
-  fileKind: string | null;
-  sizeBytes: number | null;
-  ownerId: string;
-  ownerName: string | null;
-  ownerAvatar: string | null;
-}
-
-export interface PostTargetRow {
-  id: string;
-  title: string | null;
-  body: string;
-  visibility: string;
-  likeCount: number;
-  commentCount: number;
-  authorId: string;
-  authorName: string | null;
-  authorAvatar: string | null;
-}
-
-export interface CollectionTargetRow {
-  id: string;
-  title: string;
-  visibility: string;
-  itemCount: number;
-  ownerId: string;
-  ownerName: string | null;
-  ownerAvatar: string | null;
-}
-
-export async function hydrateDocuments(
-  ids: string[],
-  viewer: Viewer,
-  executor: Executor = db,
-): Promise<Map<string, DocumentTargetRow>> {
-  if (ids.length === 0) return new Map();
-
-  const rows = await executor
-    .select({
-      id: documents.id,
-      title: documents.title,
-      visibility: documents.visibility,
-      fileKind: documents.fileKind,
-      sizeBytes: documents.sizeBytes,
-      ownerId: users.id,
-      ownerName: users.displayName,
-      ownerAvatar: users.avatarUrl,
-    })
-    .from(documents)
-    .innerJoin(users, eq(users.id, documents.ownerUserId))
-    .where(and(inArray(documents.id, ids), documentVisibilityPredicate(viewer)));
-
-  return new Map(rows.map((r) => [r.id, r]));
-}
-
-export async function hydratePosts(
-  ids: string[],
-  viewer: Viewer,
-  executor: Executor = db,
-): Promise<Map<string, PostTargetRow>> {
-  if (ids.length === 0) return new Map();
-
-  const rows = await executor
-    .select({
-      id: posts.id,
-      title: posts.title,
-      body: posts.body,
-      visibility: posts.visibility,
-      likeCount: posts.likeCount,
-      commentCount: posts.commentCount,
-      authorId: users.id,
-      authorName: users.displayName,
-      authorAvatar: users.avatarUrl,
-    })
-    .from(posts)
-    .innerJoin(users, eq(users.id, posts.authorUserId))
-    .where(and(inArray(posts.id, ids), postVisibilityPredicate(viewer)));
-
-  return new Map(
-    rows.map((r) => [
-      r.id,
-      { ...r, likeCount: Number(r.likeCount), commentCount: Number(r.commentCount) },
-    ]),
-  );
-}
-
-export async function hydrateCollections(
-  ids: string[],
-  viewer: Viewer,
-  executor: Executor = db,
-): Promise<Map<string, CollectionTargetRow>> {
-  if (ids.length === 0) return new Map();
-
-  const rows = await executor
-    .select({
-      id: collections.id,
-      title: collections.title,
-      visibility: collections.visibility,
-      itemCount: collections.itemCount,
-      ownerId: users.id,
-      ownerName: users.displayName,
-      ownerAvatar: users.avatarUrl,
-    })
-    .from(collections)
-    .innerJoin(users, eq(users.id, collections.ownerUserId))
-    .where(and(inArray(collections.id, ids), collectionVisibilityPredicate(viewer)));
-
-  return new Map(rows.map((r) => [r.id, { ...r, itemCount: Number(r.itemCount) }]));
-}
+// The hydrators that used to live here moved to `../shared/hydrate.js`. They
+// were never collection-specific — they load a polymorphic target and apply
+// its owning module's visibility rule — and bookmarks needs exactly the same
+// three queries. A second copy would have been a second place for the document
+// visibility rule to live, which is the one thing this module's header warns
+// against.

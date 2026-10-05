@@ -15,6 +15,7 @@ import { seedRbac } from './seeds/01-rbac.js';
 import { seedTaxonomy } from './seeds/02-taxonomy.js';
 import { seedUsers } from './seeds/03-users.js';
 import { seedSettings } from './seeds/04-settings.js';
+import { seedBadges } from './seeds/05-badges.js';
 
 const notes: string[] = [];
 
@@ -38,6 +39,12 @@ async function main(): Promise<void> {
   const settingsResult = await seedSettings();
   console.log(
     `ok (${settingsResult.inserted} created, ${settingsResult.existing} already present)`,
+  );
+
+  process.stdout.write('  → badges ... ');
+  const badgesResult = await seedBadges();
+  console.log(
+    `ok (${badgesResult.inserted} created, ${badgesResult.updated} already present)`,
   );
 
   process.stdout.write('  → accounts ... ');

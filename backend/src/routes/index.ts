@@ -7,11 +7,14 @@ import { searchRoutes } from '../modules/search/search.route.js';
 import { bookmarkRoutes } from '../modules/social/bookmarks/bookmarks.route.js';
 import { collectionRoutes } from '../modules/social/collections/collections.route.js';
 import { commentRoutes } from '../modules/social/comments/comments.route.js';
+import { feedRoutes } from '../modules/social/feed/feed.route.js';
 import { followRoutes } from '../modules/social/follows/follows.route.js';
+import { leaderboardRoutes } from '../modules/social/leaderboards/leaderboards.route.js';
 import { likeRoutes } from '../modules/social/likes/likes.route.js';
 import { notificationRoutes } from '../modules/social/notifications/notifications.route.js';
 import { postRoutes } from '../modules/social/posts/posts.route.js';
 import { taxonomyRoutes } from '../modules/taxonomy/taxonomy.route.js';
+import { userRoutes } from '../modules/users/users.route.js';
 import { documentRoutes } from '../modules/documents/documents.route.js';
 import { uploadRoutes } from '../modules/uploads/upload.route.js';
 
@@ -47,6 +50,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       v1.register(notificationRoutes, { prefix: '/notifications' });
       v1.register(bookmarkRoutes, { prefix: '/bookmarks' });
       v1.register(collectionRoutes, { prefix: '/collections' });
+      v1.register(userRoutes, { prefix: '/users' });
+      v1.register(leaderboardRoutes, { prefix: '/leaderboards' });
+      v1.register(feedRoutes, { prefix: '/feed' });
 
       // Remaining feature modules land here as they are built:
     },

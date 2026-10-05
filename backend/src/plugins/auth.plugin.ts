@@ -21,6 +21,17 @@ import type { AuthenticatedUser } from '../types/fastify.js';
  * The check order in `authenticate` is deliberate: cheap cryptographic
  * verification first, then the user record, then the session. A malformed or
  * forged token is rejected before any database work.
+ *
+ * BEARER ONLY. This never falls back to the `rt` cookie, and that is what makes
+ * it correct that most mutating routes carry no `x-csrf-token` check. A browser
+ * attaches cookies to a cross-site request automatically, but it never attaches
+ * an `Authorization` header — so the access token cannot be replayed by a forged
+ * form, and the token *is* the CSRF defence. The routes that genuinely need the
+ * header are the cookie-authenticated ones (`/auth/refresh`, `/auth/logout`),
+ * and those have it.
+ *
+ * Adding a cookie fallback here would silently reopen CSRF on every mutating
+ * route in the application at once, with no test failing.
  */
 
 /** Wildcard permission held by super_admin; short-circuits every check. */

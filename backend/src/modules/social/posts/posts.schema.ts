@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { cursorSchema } from '../../../lib/cursor.js';
 import { paginationSchema } from '../../../lib/pagination.js';
 import { uuidSchema } from '../../../lib/validation.js';
 
@@ -44,10 +45,25 @@ export const updatePostSchema = z
   .strict();
 
 export const listPostsQuerySchema = paginationSchema.extend({
+  /**
+   * No default, unlike `paginationSchema`. Whether this is present IS the mode
+   * selector:
+   *
+   *   `page` sent      → numbered pages, and `meta.total`
+   *   `page` omitted   → keyset, and `meta.nextCursor`
+   *
+   * A default here would make the two indistinguishable, and the first page of
+   * a cursor walk — which has no cursor yet — would come back in offset shape
+   * with no way to continue. "Asking for a page number gets you page numbers"
+   * is also the rule a caller would guess.
+   */
+  page: z.coerce.number().int().min(1).max(10_000).optional(),
   authorUserId: uuidSchema.optional(),
   facultyId: uuidSchema.optional(),
   following: z.enum(['true', 'false']).optional().transform((v) => v === 'true'),
   sort: z.enum(['newest', 'popular']).optional().default('newest'),
+  /** Keyset position from a previous response's `meta.nextCursor`. */
+  cursor: cursorSchema.optional(),
 });
 
 export const postIdParamSchema = z.object({ id: uuidSchema });

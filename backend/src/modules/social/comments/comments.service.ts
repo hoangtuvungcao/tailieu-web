@@ -2,6 +2,9 @@ import { db } from '../../../db/client.js';
 import { AppError } from '../../../lib/errors.js';
 import { paginate, type PaginationInput } from '../../../lib/pagination.js';
 import { adjustCounter, refreshPostHotScore } from '../shared/counters.js';
+import { isoDateTime as iso } from '../shared/dates.js';
+import { recordTrendSignal, TREND_WEIGHTS } from '../feed/trending.js';
+import { notify } from '../notifications/notifications.service.js';
 import type { SocialActor } from '../shared/actor.js';
 import { documentVisibilityPredicate, postVisibilityPredicate } from '../shared/visibility.js';
 import { documents, posts } from '../../../db/schema/index.js';
@@ -49,10 +52,6 @@ export interface CommentDto {
   permissions: { canEdit: boolean; canDelete: boolean };
   /** Populated only on top-level comments. */
   replies?: CommentDto[];
-}
-
-function iso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 /**
@@ -112,37 +111,43 @@ function toDto(row: repo.CommentRow, actor: SocialActor | null, liked: boolean):
 }
 
 /**
- * Confirm the viewer may see the thing being commented on.
+ * Confirm the viewer may see the thing being commented on, and find its owner.
  *
  * Runs the *same* predicate the owning module uses, so a comment can never be
  * readable where its target is not — which is the whole risk with comments
  * being polymorphic.
+ *
+ * The owner comes back from the same query rather than a second lookup. Every
+ * extra query here is another place the visibility predicate could be
+ * forgotten, and a notification addressed from a row fetched without one would
+ * be a way to learn that a private document exists.
  */
-async function assertTargetVisible(
+async function resolveTarget(
   targetType: 'document' | 'post',
   targetId: string,
   actor: SocialActor | null,
-): Promise<void> {
+): Promise<{ ownerUserId: string }> {
   const viewer = actor?.viewer ?? { userId: null, isModerator: false, facultyIds: [] };
 
   if (targetType === 'document') {
     const [row] = await db
-      .select({ id: documents.id })
+      .select({ ownerUserId: documents.ownerUserId })
       .from(documents)
       .where(and(eq(documents.id, targetId), documentVisibilityPredicate(viewer)))
       .limit(1);
 
     if (!row) throw new AppError('DOCUMENT_NOT_FOUND', 'Không tìm thấy tài liệu.');
-    return;
+    return { ownerUserId: row.ownerUserId };
   }
 
   const [row] = await db
-    .select({ id: posts.id })
+    .select({ ownerUserId: posts.authorUserId })
     .from(posts)
     .where(and(eq(posts.id, targetId), postVisibilityPredicate(viewer)))
     .limit(1);
 
   if (!row) throw new AppError('NOT_FOUND', 'Không tìm thấy bài đăng.');
+  return { ownerUserId: row.ownerUserId };
 }
 
 export async function listComments(
@@ -151,7 +156,7 @@ export async function listComments(
   pagination: PaginationInput,
   actor: SocialActor | null,
 ) {
-  await assertTargetVisible(targetType, targetId, actor);
+  await resolveTarget(targetType, targetId, actor);
 
   const { items, total } = await repo.listThread(targetType, targetId, pagination);
 
@@ -199,11 +204,13 @@ export async function createComment(
   input: z.infer<typeof createCommentSchema>,
   actor: SocialActor,
 ): Promise<CommentDto> {
-  await assertTargetVisible(input.targetType, input.targetId, actor);
+  const target = await resolveTarget(input.targetType, input.targetId, actor);
 
   const created = await db.transaction(async (tx) => {
     let depth = 0;
     let rootCommentId: string | null = null;
+    /** Set when this is a reply: who to tell, and which comment they wrote. */
+    let replyTo: { userId: string; commentId: string } | null = null;
 
     if (input.parentCommentId) {
       const parent = await repo.findCommentById(input.parentCommentId, tx);
@@ -225,6 +232,7 @@ export async function createComment(
 
       depth = parent.depth + 1;
       rootCommentId = parent.rootCommentId ?? parent.id;
+      replyTo = { userId: parent.authorUserId, commentId: parent.id };
     }
 
     const { id } = await repo.insertComment(tx, {
@@ -258,8 +266,53 @@ export async function createComment(
       await refreshPostHotScore(tx, input.targetId);
     }
 
+    // --- Notify -------------------------------------------------------------
+    // A reply tells the person replied to; a top-level comment tells whoever
+    // owns the thing commented on. Never both — the author of a post does not
+    // also need a second notification for a reply buried in their own thread,
+    // which is the same fact told twice.
+    //
+    // Inside the transaction, so a notification cannot outlive a comment that
+    // was rolled back. `notify` returns early when the actor is the recipient,
+    // so commenting on your own content is silent without a check here.
+    //
+    // NOT retracted when the comment is later deleted: unlike a follow, which
+    // is undone, a deleted comment leaves a tombstone that still holds its
+    // place in the thread — so "A replied to you" remains true.
+    const kind = replyTo
+      ? 'comment_reply'
+      : input.targetType === 'document'
+        ? 'document_comment'
+        : 'post_comment';
+
+    await notify(tx, {
+      recipientUserId: replyTo ? replyTo.userId : target.ownerUserId,
+      actorUserId: actor.userId,
+      kind,
+      // Points at the THREAD, not at the comment. A comment has no page of its
+      // own, so a notification targeting one would be a link to nowhere —
+      // whichever kind this is, the recipient has to land somewhere they can
+      // read the thing. `kind` is what distinguishes a reply from a top-level
+      // comment, so nothing is lost by not targeting the comment.
+      targetType: input.targetType,
+      targetId: input.targetId,
+      // Collapses repeats per *thing commented on*: a hundred replies to one
+      // comment become one row reading "A và 99 người khác". The key names the
+      // comment rather than the thread, so two busy threads on the same post
+      // stay two notifications rather than merging into one meaningless count.
+      groupKey: `${kind}:${replyTo ? replyTo.commentId : input.targetId}`,
+      payload: {},
+    });
+
     return { id };
   });
+
+  // After the commit, and only for posts. Comments on documents are not part of
+  // any ranked list, and recording them would put document ids into a set that
+  // is only ever read against posts.
+  if (input.targetType === 'post') {
+    await recordTrendSignal(input.targetId, TREND_WEIGHTS.comment);
+  }
 
   const row = await repo.findCommentById(created.id);
   if (!row) throw new Error('Comment vanished immediately after creation.');
@@ -282,7 +335,7 @@ export async function updateComment(
   // The target's visibility is re-checked here too: an author who has since
   // lost access to the document must not be able to keep editing their comment
   // on it.
-  await assertTargetVisible(existing.targetType, existing.targetId, actor);
+  await resolveTarget(existing.targetType, existing.targetId, actor);
 
   await repo.updateComment(db, id, body);
 

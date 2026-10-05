@@ -22,6 +22,20 @@
       "when": 1791143927072,
       "tag": "0002_plain_nextwave",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791172775013,
+      "tag": "0003_chubby_magus",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791182836279,
+      "tag": "0004_aromatic_rick_jones",
+      "breakpoints": true
     }
   ]
 }

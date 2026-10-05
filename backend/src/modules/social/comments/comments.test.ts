@@ -118,6 +118,59 @@ async function listComments(
   return { items: body.data, total: body.meta.total };
 }
 
+interface NotificationShape {
+  id: string;
+  kind: string;
+  targetType: string | null;
+  targetId: string | null;
+  aggregationCount: number;
+  readAt: string | null;
+  createdAt: string;
+  actorName: string | null;
+}
+
+async function listNotifications(token: string): Promise<NotificationShape[]> {
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/v1/notifications?limit=50',
+    headers: auth(token),
+  });
+  expect(response.statusCode).toBe(200);
+  return (response.json() as { data: NotificationShape[] }).data;
+}
+
+/**
+ * The notifications pointing at one thing.
+ *
+ * Identified by `targetId` because a post or comment is created fresh per test
+ * and its id is unique to that test — which means these assertions do not
+ * depend on what else is in the table, or on the order the suite runs in.
+ */
+function forTarget(rows: NotificationShape[], targetId: string): NotificationShape[] {
+  return rows.filter((row) => row.targetId === targetId);
+}
+
+async function unread(token: string): Promise<number> {
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/v1/notifications/unread-count',
+    headers: auth(token),
+  });
+  // No `If-None-Match` is sent, so the 304 path is not taken and a body is
+  // always returned.
+  expect(response.statusCode).toBe(200);
+  return (response.json() as { data: { unread: number } }).data.unread;
+}
+
+async function markAllRead(token: string): Promise<void> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/v1/notifications/read-all',
+    headers: auth(token),
+  });
+  expect(response.statusCode).toBe(200);
+}
+
 beforeAll(async () => {
   app = await buildApp();
   await app.ready();
@@ -157,6 +210,27 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Notifications raised by these tests. The target is polymorphic, so there is
+  // no foreign key to the posts or comments — deleting those would leave these
+  // behind, pointing at rows that no longer exist.
+  await db.execute(sql`
+    DELETE FROM notifications
+     WHERE actor_user_id IN (SELECT id FROM users WHERE email = ${OTHER_EMAIL})
+        OR recipient_user_id IN (SELECT id FROM users WHERE email = ${OTHER_EMAIL})
+        OR target_id IN (SELECT id FROM posts WHERE body LIKE ${MARKER + '%'})
+        OR target_id IN (
+             SELECT id FROM comments
+              WHERE target_id IN (SELECT id FROM posts WHERE body LIKE ${MARKER + '%'})
+           )
+  `);
+  // The badge is a denormalised column, so deleting rows behind it leaves it
+  // stale — the exact drift `reconcileUnread` exists to repair. Doing it here
+  // keeps this suite from leaving a wrong number for whichever suite runs next.
+  await db.execute(sql`
+    UPDATE users SET unread_notification_count = 0
+     WHERE id = ${studentUserId}::uuid OR email = ${OTHER_EMAIL}
+  `);
+
   // Comments are polymorphic — there is no foreign key from `comments` to
   // `posts`, so deleting the posts would leave the comments behind.
   await db.execute(sql`
@@ -490,5 +564,89 @@ describe('a moderated comment', () => {
     expect(JSON.stringify(replies)).not.toContain('bị ẩn');
     expect(replies[1]!.deleted).toBe(false);
     expect(replies[1]!.body).toBe('Trả lời lành mạnh');
+  });
+});
+
+describe('comment notifications', () => {
+  /**
+   * This covers a hole that existed until now: `post_comment` and
+   * `comment_reply` were declared in both the database enum and the TypeScript
+   * union, but nothing ever emitted them. Likes and follows notified correctly,
+   * so the feature looked complete from the outside — while the most common
+   * event in a discussion platform, somebody replying to you, was silent.
+   *
+   * The assertions are deliberately about *who* gets told, because that is the
+   * part with a plausible wrong answer: notifying the post author about every
+   * reply in their own thread would look right and would bury them.
+   */
+
+  it('tells the post author when somebody else comments', async () => {
+    const postId = await createPost();
+    await createComment(postId, 'Bình luận của người khác', null, otherToken);
+
+    const rows = forTarget(await listNotifications(studentToken), postId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe('post_comment');
+    expect(rows[0]!.targetType).toBe('post');
+    expect(rows[0]!.actorName).toBe('Người bình luận khác');
+  });
+
+  it('does not tell you about your own comment', async () => {
+    const postId = await createPost();
+    await createComment(postId, 'Tự bình luận');
+
+    expect(forTarget(await listNotifications(studentToken), postId)).toHaveLength(0);
+  });
+
+  it('tells the person replied to, rather than the post author', async () => {
+    const postId = await createPost();
+    // `other` owns the root comment, `student` owns the post.
+    const root = await createComment(postId, 'Gốc', null, otherToken);
+    await createComment(postId, 'Trả lời', root);
+
+    const toOther = (await listNotifications(otherToken)).filter(
+      (row) => row.kind === 'comment_reply' && row.targetId === postId,
+    );
+    expect(toOther).toHaveLength(1);
+    // It points at the thread, not at the comment. A comment has no page of its
+    // own, so a notification targeting one would be a link to nowhere.
+    expect(toOther[0]!.targetType).toBe('post');
+
+    // The post author is not told as well. One fact, one notification.
+    const toAuthor = (await listNotifications(studentToken)).filter(
+      (row) => row.kind === 'comment_reply' && row.targetId === postId,
+    );
+    expect(toAuthor).toHaveLength(0);
+  });
+
+  it('collapses repeated replies to one comment into a single row', async () => {
+    const postId = await createPost();
+    const root = await createComment(postId, 'Gốc');
+    await createComment(postId, 'Trả lời 1', root, otherToken);
+    await createComment(postId, 'Trả lời 2', root, otherToken);
+    await createComment(postId, 'Trả lời 3', root, otherToken);
+
+    const rows = forTarget(await listNotifications(studentToken), postId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe('comment_reply');
+    // Three replies to ONE comment collapsed. The group key names the comment,
+    // so a hundred replies in this thread stay one row — while a second, busier
+    // thread on the same post would correctly be its own row.
+    expect(rows[0]!.aggregationCount).toBe(3);
+  });
+
+  it('moves the unread badge once per collapsed row, not once per event', async () => {
+    await markAllRead(studentToken);
+    const before = await unread(studentToken);
+
+    const postId = await createPost();
+    await createComment(postId, 'Một', null, otherToken);
+    expect(await unread(studentToken)).toBe(before + 1);
+
+    // The second comment aggregates into the same unread row, so the badge must
+    // not move again. A badge that counted events rather than rows would climb
+    // on every comment and never come back down.
+    await createComment(postId, 'Hai', null, otherToken);
+    expect(await unread(studentToken)).toBe(before + 1);
   });
 });

@@ -62,6 +62,12 @@ export const notificationKindEnum = pgEnum('notification_kind', [
   'collection_share',
   'moderation',
   'system',
+  // Appended rather than slotted next to `post_comment`, where it reads better.
+  // `ALTER TYPE ... ADD VALUE` can only append, so a value declared mid-list
+  // would leave the TypeScript order and the database order disagreeing — and
+  // an enum whose two definitions differ is the kind of drift that only shows
+  // up much later.
+  'document_comment',
 ]);
 
 export const reputationReasonEnum = pgEnum('reputation_reason', [
