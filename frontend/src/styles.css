@@ -148,6 +148,30 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+
+    /* Titles, names and filenames are user input, and user input contains
+       tokens with no space in them: a URL, a `snake_case` report title, an
+       uploaded filename. One such token widens the whole page, so every other
+       element shifts and the phone scrolls sideways — on pages nowhere near
+       the text that caused it.
+
+       `anywhere`, not `break-word`. Both break a word that would otherwise
+       overflow a line, but only `anywhere` also counts those break points when
+       the browser works out min-content width. That difference is the whole
+       fix here: a flex or grid item defaults to `min-width: auto`, so it
+       refuses to shrink below its min-content, and a heading that is itself a
+       flex row (`flex items-center gap-2` around an icon) puts its text in an
+       anonymous flex item with no width to constrain. Under `break-word` those
+       never shrink far enough to need a break, so the word never breaks and
+       the page still overflows — measured, on the collections, leaderboard and
+       home headings. Under `anywhere` min-content collapses to a character,
+       the item shrinks to the space it actually has, and the text breaks.
+
+       Inherited from `body` deliberately: the fix has to cover every element
+       holding user text, including ones added later, and a rule that only
+       applies where somebody remembered to add a class is a rule that will be
+       missing again next week. */
+    overflow-wrap: anywhere;
   }
 
   /* A visible focus ring on every interactive element. Never removed — the
