@@ -108,6 +108,8 @@ export interface DocumentFilters {
   academicYearId?: string;
   fileKind?: string;
   tag?: string;
+  /** Used by a public profile to list one account's documents. */
+  ownerUserId?: string;
   sort?: string;
   page?: number;
   limit?: number;

@@ -3,6 +3,7 @@ import {
   BarChart3,
   Flag,
   HardDrive,
+  Layers,
   LayoutDashboard,
   Settings as SettingsIcon,
   Users,
@@ -26,6 +27,7 @@ import { cn } from '@/lib/utils';
 const SECTIONS = [
   { to: '/admin', label: 'Tổng quan', icon: LayoutDashboard, end: true, permission: 'analytics.read' },
   { to: '/admin/users', label: 'Người dùng', icon: Users, permission: 'users.read' },
+  { to: '/admin/taxonomy', label: 'Danh mục', icon: Layers, permission: 'taxonomy.manage' },
   { to: '/admin/reports', label: 'Báo cáo', icon: Flag, permission: 'reports.read' },
   { to: '/admin/storage', label: 'Lưu trữ', icon: HardDrive, permission: 'storage.manage' },
   { to: '/admin/audit', label: 'Nhật ký', icon: Activity, permission: 'audit.read' },

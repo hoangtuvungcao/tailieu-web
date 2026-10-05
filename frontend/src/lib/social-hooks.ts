@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, apiWithMeta } from './api-client';
 
@@ -62,6 +62,42 @@ export function usePosts(filters: FeedFilters) {
       );
       return { posts: data, meta: meta as unknown as PaginatedMeta };
     },
+  });
+}
+
+/**
+ * The community feed, walked by keyset cursor.
+ *
+ * A separate hook from `usePosts` rather than a flag on it, because the two
+ * genuinely return different things: this one has no total — a cursor never
+ * counts — and accumulates pages, while `usePosts` answers "page 3 of 12" for a
+ * list that is not moving underneath the reader. One hook with a mode switch
+ * would have to lie about one of the two.
+ *
+ * No `page` in the request is what selects cursor mode on the server, so this
+ * must never send one.
+ */
+export function useFeed(filters: Omit<FeedFilters, 'page' | 'cursor'>) {
+  return useInfiniteQuery({
+    queryKey: ['social', 'posts', 'feed', filters],
+    queryFn: async ({ pageParam }) => {
+      const { data, meta } = await apiWithMeta<Post[]>(
+        `/posts${qs({
+          ...filters,
+          following: filters.following ? 'true' : undefined,
+          cursor: pageParam as string | undefined,
+          limit: filters.limit ?? 15,
+        })}`,
+      );
+      return {
+        posts: data,
+        nextCursor: (meta as { nextCursor?: string | null }).nextCursor ?? null,
+      };
+    },
+    initialPageParam: undefined as string | undefined,
+    // Null means the server has nothing after this page; `undefined` is what
+    // react-query reads as "stop".
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }
 
@@ -244,6 +280,76 @@ export function useUnreadCount() {
 }
 
 // =============================================================================
+// Notifications
+// =============================================================================
+
+export interface Notification {
+  id: string;
+  kind: string;
+  /** What the notification points at. Null only for system notifications. */
+  targetType: string | null;
+  targetId: string | null;
+  /**
+   * How many events this one row stands for.
+   *
+   * A thousand likes on a post are one row reading "A và 999 người khác", not a
+   * thousand rows — the server collapses repeats on the thing they share.
+   */
+  aggregationCount: number;
+  readAt: string | null;
+  createdAt: string;
+  /**
+   * Actor identity, and nothing else.
+   *
+   * The server deliberately does not snapshot the target's title into the
+   * payload: a notification holding a copy would keep announcing a document the
+   * recipient has since lost access to. So a row says who and what kind, and
+   * the target is only ever resolved by opening the link.
+   */
+  actorName: string | null;
+  actorAvatar: string | null;
+}
+
+export function useNotifications(page = 1) {
+  return useQuery({
+    queryKey: ['social', 'notifications', 'list', page],
+    queryFn: async () => {
+      const { data, meta } = await apiWithMeta<Notification[]>(
+        `/notifications?page=${page}&limit=30`,
+      );
+      return { notifications: data, meta: meta as unknown as PaginatedMeta };
+    },
+  });
+}
+
+/**
+ * Both mutations invalidate the whole `['social','notifications']` prefix,
+ * which includes the polled `unread` key — so the header badge and the list
+ * cannot end up disagreeing about what has been read.
+ */
+export function useMarkNotificationRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (notificationId: string) =>
+      api.post<{ read: boolean; unread: number }>(`/notifications/${notificationId}/read`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['social', 'notifications'] });
+    },
+  });
+}
+
+export function useMarkAllNotificationsRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ marked: number; unread: number }>('/notifications/read-all'),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['social', 'notifications'] });
+    },
+  });
+}
+
+// =============================================================================
 // Collections
 // =============================================================================
 
@@ -273,21 +379,30 @@ export interface Collection {
   items?: CollectionItem[];
 }
 
+/**
+ * The card for a pointer, as rendered in a list.
+ *
+ * Declared once because a collection item and a bookmark show the same thing
+ * about the same kinds of target — mirrors `TargetSummary` on the server, which
+ * is shared for exactly the same reason.
+ */
+export interface TargetSummary {
+  type: 'document' | 'post' | 'collection';
+  id: string;
+  title: string;
+  owner: { id: string; displayName: string; avatarUrl: string | null };
+  visibility: string;
+  fileKind: string | null;
+  sizeBytes: number | null;
+  stats: { likes: number; comments: number; items: number };
+}
+
 export interface CollectionItem {
   id: string;
   note: string | null;
   position: number;
   addedAt: string;
-  target: {
-    type: 'document' | 'post' | 'collection';
-    id: string;
-    title: string;
-    owner: { id: string; displayName: string; avatarUrl: string | null };
-    visibility: string;
-    fileKind: string | null;
-    sizeBytes: number | null;
-    stats: { likes: number; comments: number; items: number };
-  };
+  target: TargetSummary;
 }
 
 export function useCollections(filters: { q?: string; page?: number; limit?: number } = {}) {
@@ -418,6 +533,301 @@ export function useReorderCollectionItems() {
       void queryClient.invalidateQueries({
         queryKey: ['social', 'collection', input.collectionId],
       });
+    },
+  });
+}
+
+// =============================================================================
+// Profiles and follows
+// =============================================================================
+
+export interface ProfileBadge {
+  code: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  tier: number;
+  category: string;
+  awardedAt: string;
+}
+
+export interface PublicProfile {
+  id: string;
+  username: string | null;
+  displayName: string;
+  bio: string | null;
+  avatarUrl: string | null;
+  coverUrl: string | null;
+  faculty: { id: string; name: string; code: string } | null;
+  program: { id: string; name: string; code: string } | null;
+  enrollmentYear: number | null;
+  joinedAt: string;
+  /**
+   * Every number here is what *this viewer* can see, not the account's totals.
+   * The profile links to these lists, and both apply the same predicate.
+   */
+  stats: { posts: number; documents: number; followers: number; following: number };
+  /**
+   * All-time, and it can be negative — a penalised account goes below zero
+   * rather than being clamped at it. Not viewer-filtered, unlike the counts:
+   * reputation is not content.
+   */
+  reputation: number;
+  badges: ProfileBadge[];
+  isFollowedByViewer: boolean;
+  isSelf: boolean;
+  permissions: { canFollow: boolean };
+}
+
+export function useProfile(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['social', 'profile', userId],
+    queryFn: () => api.get<PublicProfile>(`/users/${userId}`),
+    // No id means the route has not resolved yet, not a missing profile.
+    enabled: Boolean(userId),
+  });
+}
+
+export interface FollowState {
+  followers: number;
+  following: number;
+  isFollowing: boolean;
+}
+
+/**
+ * Whether the viewer follows this account, with their counts.
+ *
+ * Fetched rather than passed down, so a follow button rendered inside a list is
+ * correct without every list having to load the relationships first. Public —
+ * a signed-out caller gets `isFollowing: false`.
+ */
+export function useFollowState(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['social', 'follow', userId],
+    queryFn: () => api.get<FollowState>(`/follows/${userId}`),
+    enabled: Boolean(userId),
+  });
+}
+
+export function useSetFollow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    // Explicit desired state, matching likes and bookmarks: a retried request
+    // cannot undo itself the way a toggle would.
+    mutationFn: (input: { userId: string; following: boolean }) =>
+      api.put<{ following: boolean; followers: number }>(`/follows/${input.userId}`, {
+        following: input.following,
+      }),
+    onSuccess: (_result, input) => {
+      void queryClient.invalidateQueries({ queryKey: ['social', 'follow', input.userId] });
+      // The profile header carries the same numbers and the same flag.
+      void queryClient.invalidateQueries({ queryKey: ['social', 'profile', input.userId] });
+      // The "following" feed is defined by this relationship.
+      void queryClient.invalidateQueries({ queryKey: ['social', 'posts'] });
+    },
+  });
+}
+
+export interface FollowUser {
+  id: string;
+  username: string | null;
+  displayName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  followedAt: string;
+}
+
+function useFollowList(
+  kind: 'followers' | 'following',
+  userId: string | undefined,
+  page: number,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['social', kind, userId, page],
+    queryFn: async () => {
+      const { data, meta } = await apiWithMeta<FollowUser[]>(
+        `/follows/${userId}/${kind}?page=${page}&limit=30`,
+      );
+      return { users: data, meta: meta as unknown as PaginatedMeta };
+    },
+    // `enabled` lets a tabbed profile fetch only the list being looked at,
+    // rather than both on every open.
+    enabled: Boolean(userId) && enabled,
+  });
+}
+
+export function useFollowers(userId: string | undefined, page = 1, enabled = true) {
+  return useFollowList('followers', userId, page, enabled);
+}
+
+export function useFollowing(userId: string | undefined, page = 1, enabled = true) {
+  return useFollowList('following', userId, page, enabled);
+}
+
+// =============================================================================
+// Leaderboards
+// =============================================================================
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  score: number;
+  isViewer: boolean;
+}
+
+export interface Leaderboard {
+  /** `'2026-10'`. A month key, not a date — see the note on the API. */
+  periodKey: string;
+  scope: 'university' | 'faculty' | 'program';
+  scopeId: string | null;
+  entries: LeaderboardEntry[];
+  /**
+   * The viewer's own position, which may be outside the returned page — or null
+   * when they are not on the board at all. Not `rank: 0`: somebody with no
+   * points has no rank, and showing one invites the question of what it means.
+   */
+  viewer: { rank: number; score: number } | null;
+}
+
+export function useLeaderboard(filters: {
+  period?: string;
+  scope?: 'university' | 'faculty' | 'program';
+  scopeId?: string;
+}) {
+  return useQuery({
+    queryKey: ['social', 'leaderboard', filters],
+    queryFn: () => api.get<Leaderboard>(`/leaderboards${qs(filters)}`),
+  });
+}
+
+// =============================================================================
+// Ranked feed
+// =============================================================================
+
+export interface RankedFeed {
+  posts: Post[];
+  /**
+   * Which ranking actually ran.
+   *
+   * `popular-fallback` means Redis could not answer and the server used a
+   * bounded SQL query instead. The page shows the same heading either way —
+   * "recently popular" is an honest description of both — but a caller that
+   * wants to explain a surprising order can tell which one produced it.
+   */
+  ranking: 'trending' | 'popular-fallback' | 'heuristic';
+}
+
+export function useTrending(limit = 20) {
+  return useQuery({
+    queryKey: ['social', 'feed', 'trending', limit],
+    queryFn: async () => {
+      const { data, meta } = await apiWithMeta<Post[]>(`/feed/trending?limit=${limit}`);
+      return {
+        posts: data,
+        ranking: (meta as { ranking: RankedFeed['ranking'] }).ranking,
+      };
+    },
+  });
+}
+
+/**
+ * The "For You" tab.
+ *
+ * `enabled` is required rather than optional because the endpoint answers 401
+ * without an account — every term in the heuristic needs a viewer. The UI only
+ * offers the tab when signed in, so the request is never sent otherwise.
+ */
+export function useForYou(limit = 20, enabled = true) {
+  return useQuery({
+    queryKey: ['social', 'feed', 'for-you', limit],
+    queryFn: async () => {
+      const { data, meta } = await apiWithMeta<Post[]>(`/feed/for-you?limit=${limit}`);
+      return {
+        posts: data,
+        ranking: (meta as { ranking: RankedFeed['ranking'] }).ranking,
+      };
+    },
+    enabled,
+  });
+}
+
+// =============================================================================
+// Bookmarks
+// =============================================================================
+
+export interface Bookmark {
+  id: string;
+  folder: string | null;
+  savedAt: string;
+  target: TargetSummary;
+}
+
+export function useBookmarks(filters: { folder?: string; page?: number } = {}) {
+  return useQuery({
+    queryKey: ['social', 'bookmarks', 'list', filters],
+    queryFn: async () => {
+      const { data, meta } = await apiWithMeta<Bookmark[]>(
+        `/bookmarks${qs({ ...filters, limit: 50 })}`,
+      );
+      return { bookmarks: data, meta: meta as unknown as PaginatedMeta };
+    },
+  });
+}
+
+/**
+ * The folders this viewer has actually used, with counts.
+ *
+ * The counts are computed with the same visibility predicate as the list, so a
+ * folder can never advertise more items than opening it will show.
+ */
+export function useBookmarkFolders() {
+  return useQuery({
+    queryKey: ['social', 'bookmarks', 'folders'],
+    queryFn: () => api.get<{ folder: string; total: number }[]>('/bookmarks/folders'),
+  });
+}
+
+/**
+ * Whether the viewer has bookmarked this thing.
+ *
+ * Safe to call while signed out — the endpoint uses optional auth and answers
+ * `{ bookmarked: false }` — which is what lets one button serve both states
+ * without every call site branching on authentication.
+ */
+export function useBookmarkState(
+  target: 'document' | 'post' | 'collection',
+  id: string | undefined,
+) {
+  return useQuery({
+    queryKey: ['social', 'bookmarks', 'state', target, id],
+    queryFn: () => api.get<{ bookmarked: boolean }>(`/bookmarks/${target}/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useSetBookmark() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    // Explicit desired state, matching likes and follows: a retried request
+    // cannot undo itself the way a toggle would.
+    mutationFn: (input: {
+      target: 'document' | 'post' | 'collection';
+      id: string;
+      bookmarked: boolean;
+      folder?: string | null;
+    }) =>
+      api.put<{ bookmarked: boolean }>(`/bookmarks/${input.target}/${input.id}`, {
+        bookmarked: input.bookmarked,
+        // Omitted rather than sent as null when unspecified. The server keeps an
+        // existing folder when the field is absent, so toggling from a detail
+        // page does not silently unfiled something the user had filed.
+        ...(input.folder !== undefined ? { folder: input.folder } : {}),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['social', 'bookmarks'] });
     },
   });
 }

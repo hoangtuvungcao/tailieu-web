@@ -5,7 +5,15 @@ import { Link } from 'react-router-dom';
 import { Avatar, Badge, Button, Card, CardContent, EmptyState, ErrorState, Skeleton, Textarea } from '@/components/ui';
 import { ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
-import { useCreatePost, useDeletePost, usePosts, useSetLike, type Post } from '@/lib/social-hooks';
+import {
+  useCreatePost,
+  useDeletePost,
+  useFeed,
+  useForYou,
+  useSetLike,
+  useTrending,
+  type Post,
+} from '@/lib/social-hooks';
 import { cn, formatRelativeTime } from '@/lib/utils';
 
 /**
@@ -15,8 +23,12 @@ import { cn, formatRelativeTime } from '@/lib/utils';
  * and likes through the real API. Every button either works or is absent —
  * there is no disabled placeholder for a feature that does not exist.
  *
- * Comments, collections and notifications are built on the server but have no
- * UI yet, so this page does not pretend to offer them.
+ * Paged by keyset cursor rather than by page number, because a feed is read
+ * while it changes. With page numbers, a post published while somebody is
+ * reading page 1 shifts every row down, so page 2 opens with a post they have
+ * already seen and the one pushed past the boundary is never shown at all. The
+ * server picks the mode from whether `page` is sent, and `useFeed` never
+ * sends one.
  */
 
 const VISIBILITY_LABELS: Record<string, string> = {
@@ -28,16 +40,39 @@ const VISIBILITY_LABELS: Record<string, string> = {
 export function CommunityPage() {
   const { isAuthenticated } = useAuth();
 
-  const [sort, setSort] = useState<'newest' | 'popular'>('newest');
+  const [tab, setTab] = useState<'newest' | 'trending' | 'for-you'>('newest');
   const [followingOnly, setFollowingOnly] = useState(false);
-  const [page, setPage] = useState(1);
 
-  const query = usePosts({
-    sort,
+  // Three rankings, three different questions. "Mới nhất" is cursor-walked —
+  // no `page` is sent, which is what selects cursor mode server-side, and
+  // changing a filter changes the query key so the walk restarts by itself.
+  // The other two are short ranked lists rather than walks, so they are plain
+  // queries.
+  const newest = useFeed({
     following: isAuthenticated ? followingOnly : false,
-    page,
     limit: 15,
   });
+  const trending = useTrending(20);
+  // Enabled only for the active tab, so opening the page fetches one ranking
+  // rather than three. The endpoint 401s without an account, so this must
+  // never be enabled while signed out.
+  const forYou = useForYou(20, isAuthenticated && tab === 'for-you');
+
+  const posts =
+    tab === 'newest'
+      ? (newest.data?.pages.flatMap((page) => page.posts) ?? [])
+      : ((tab === 'trending' ? trending.data?.posts : forYou.data?.posts) ?? []);
+
+  const isLoading =
+    tab === 'newest' ? newest.isLoading : tab === 'trending' ? trending.isLoading : forYou.isLoading;
+  const isError = tab === 'newest' ? newest.isError : tab === 'trending' ? trending.isError : forYou.isError;
+  const error = tab === 'newest' ? newest.error : tab === 'trending' ? trending.error : forYou.error;
+
+  function retry(): void {
+    if (tab === 'newest') void newest.refetch();
+    else if (tab === 'trending') void trending.refetch();
+    else void forYou.refetch();
+  }
 
   return (
     <div className="container-page py-8">
@@ -63,19 +98,19 @@ export function CommunityPage() {
           <div className="flex rounded-md border border-[var(--color-border)] p-0.5">
             {([
               { key: 'newest', label: 'Mới nhất' },
-              { key: 'popular', label: 'Nổi bật' },
+              { key: 'trending', label: 'Nổi bật' },
+              // Offered only when signed in — not hidden behind a 401. Every
+              // term in the ranking needs a viewer.
+              ...(isAuthenticated ? [{ key: 'for-you', label: 'Dành cho bạn' } as const] : []),
             ] as const).map((option) => (
               <button
                 key={option.key}
                 type="button"
-                aria-pressed={sort === option.key}
-                onClick={() => {
-                  setSort(option.key);
-                  setPage(1);
-                }}
+                aria-pressed={tab === option.key}
+                onClick={() => setTab(option.key)}
                 className={cn(
                   'rounded px-3 py-1 text-xs font-medium',
-                  sort === option.key
+                  tab === option.key
                     ? 'bg-[var(--color-secondary)]'
                     : 'text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)]',
                 )}
@@ -85,14 +120,11 @@ export function CommunityPage() {
             ))}
           </div>
 
-          {isAuthenticated ? (
+          {isAuthenticated && tab === 'newest' ? (
             <button
               type="button"
               aria-pressed={followingOnly}
-              onClick={() => {
-                setFollowingOnly((v) => !v);
-                setPage(1);
-              }}
+              onClick={() => setFollowingOnly((v) => !v)}
               className={cn(
                 'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium',
                 followingOnly
@@ -106,18 +138,29 @@ export function CommunityPage() {
           ) : null}
         </div>
 
-        {query.isLoading ? (
+        {tab === 'for-you' ? (
+          // Said plainly, above the list. None of this is machine learning:
+          // it is three readable terms — who you follow, your faculty, what is
+          // trending — added together. Calling it personalised would promise
+          // something it does not do.
+          <p className="mb-3 text-xs text-[var(--color-muted-foreground)]">
+            Xếp theo người bạn theo dõi, khoa của bạn và mức độ tương tác gần đây —
+            một công thức đơn giản, không phải học máy.
+          </p>
+        ) : null}
+
+        {isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-32" />
             ))}
           </div>
-        ) : query.isError ? (
+        ) : isError ? (
           <ErrorState
-            message={query.error instanceof ApiError ? query.error.message : 'Không tải được bảng tin.'}
-            onRetry={() => void query.refetch()}
+            message={error instanceof ApiError ? error.message : 'Không tải được bảng tin.'}
+            onRetry={retry}
           />
-        ) : query.data?.posts.length === 0 ? (
+        ) : posts.length === 0 ? (
           <EmptyState
             icon={<MessageSquare className="h-8 w-8" />}
             title={followingOnly ? 'Chưa có bài nào từ người bạn theo dõi' : 'Chưa có bài đăng nào'}
@@ -129,30 +172,25 @@ export function CommunityPage() {
           />
         ) : (
           <div className="space-y-3">
-            {query.data?.posts.map((post) => (
+            {posts.map((post) => (
               <PostCard key={post.id} post={post} />
             ))}
           </div>
         )}
 
-        {query.data && query.data.meta.totalPages > 1 ? (
-          <nav className="mt-6 flex items-center justify-center gap-3" aria-label="Phân trang">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-              Trước
-            </Button>
-            <span className="text-sm tabular-nums text-[var(--color-muted-foreground)]">
-              {query.data.meta.page} / {query.data.meta.totalPages}
-            </span>
+        {tab === 'newest' && newest.hasNextPage ? (
+          <div className="mt-6 flex justify-center">
             <Button
               variant="outline"
               size="sm"
-              disabled={page >= query.data.meta.totalPages}
-              onClick={() => setPage(page + 1)}
+              isLoading={newest.isFetchingNextPage}
+              onClick={() => void newest.fetchNextPage()}
             >
-              Sau
+              Tải thêm
             </Button>
-          </nav>
+          </div>
         ) : null}
+
       </div>
     </div>
   );
@@ -216,7 +254,12 @@ function Composer() {
   );
 }
 
-function PostCard({ post }: { post: Post }) {
+/**
+ * Exported because the public profile renders the same card for the same posts.
+ * A second copy would be a second place for "what a post card shows" — and,
+ * more to the point, a second place to forget the visibility badge.
+ */
+export function PostCard({ post }: { post: Post }) {
   const { isAuthenticated, user } = useAuth();
   const setLike = useSetLike();
   const remove = useDeletePost();
@@ -228,10 +271,19 @@ function PostCard({ post }: { post: Post }) {
     <Card>
       <CardContent className="space-y-3 p-4">
         <div className="flex items-start gap-3">
-          <Avatar name={post.author.displayName} src={post.author.avatarUrl} size="sm" />
+          {/* Both the avatar and the name lead to the profile — the two things
+              people actually click when they want to know who wrote this. */}
+          <Link to={`/users/${post.author.id}`} className="shrink-0">
+            <Avatar name={post.author.displayName} src={post.author.avatarUrl} size="sm" />
+          </Link>
 
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">{post.author.displayName}</p>
+            <Link
+              to={`/users/${post.author.id}`}
+              className="block truncate text-sm font-medium hover:text-[var(--color-primary)]"
+            >
+              {post.author.displayName}
+            </Link>
             <p className="text-[11px] text-[var(--color-muted-foreground)]">
               {formatRelativeTime(post.createdAt)}
               {post.editedAt ? ' · đã sửa' : ''}

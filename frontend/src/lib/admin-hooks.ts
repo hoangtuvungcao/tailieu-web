@@ -313,3 +313,89 @@ export function useUpdateSettings() {
     },
   });
 }
+
+// --- Taxonomy ----------------------------------------------------------------
+
+/**
+ * The entities the taxonomy admin screen manages.
+ *
+ * One generic hook set rather than seven bespoke ones. Each is the same shape —
+ * a list, a create, an update, a delete, gated by a different permission — so
+ * seven copies would be seven places to fix the same bug, and the differences
+ * that matter (which fields exist, which permission applies) are data, below in
+ * `TAXONOMY_ENTITIES`.
+ */
+export type TaxonomyEntity =
+  | 'faculties'
+  | 'programs'
+  | 'subjects'
+  | 'courses'
+  | 'academic-years'
+  | 'semesters'
+  | 'document-types';
+
+function invalidateTaxonomy(queryClient: ReturnType<typeof useQueryClient>, entity: TaxonomyEntity) {
+  void queryClient.invalidateQueries({ queryKey: ['admin', 'taxonomy', entity] });
+
+  // The public reference-data caches too. These feed every faculty and document
+  // type filter in the application, so an administrator renaming a faculty and
+  // then seeing the old name in the document filters would look like the edit
+  // had failed. `['programs']` is a prefix match and clears the per-faculty
+  // lists as well.
+  for (const key of ['faculties', 'programs', 'document-types']) {
+    void queryClient.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+/**
+ * `limit=100` is the API's maximum page size — asking for more is a 422, not a
+ * larger page, so this is the ceiling rather than a preference.
+ *
+ * The total comes back with the items so the screen can say when there are more
+ * rows than it is showing. Displaying the first hundred of three hundred
+ * subjects without a word is the kind of quiet truncation that reads as "this
+ * is everything".
+ */
+export const TAXONOMY_PAGE_SIZE = 100;
+
+export function useTaxonomyList(entity: TaxonomyEntity, enabled = true) {
+  return useQuery({
+    queryKey: ['admin', 'taxonomy', entity],
+    queryFn: async () => {
+      const { data, meta } = await apiWithMeta<Record<string, unknown>[]>(
+        `/taxonomy/${entity}?limit=${TAXONOMY_PAGE_SIZE}`,
+      );
+      return { items: data, total: Number((meta as { total?: number }).total ?? data.length) };
+    },
+    enabled,
+  });
+}
+
+export function useCreateTaxonomy(entity: TaxonomyEntity) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Record<string, unknown>) => api.post(`/taxonomy/${entity}`, input),
+    onSuccess: () => invalidateTaxonomy(queryClient, entity),
+  });
+}
+
+export function useUpdateTaxonomy(entity: TaxonomyEntity) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    // PATCH, not PUT: several of these entities have fields the form does not
+    // send, and a partial update is what the endpoint expects.
+    mutationFn: (input: { id: string } & Record<string, unknown>) => {
+      const { id, ...patch } = input;
+      return api.patch(`/taxonomy/${entity}/${id}`, patch);
+    },
+    onSuccess: () => invalidateTaxonomy(queryClient, entity),
+  });
+}
+
+export function useDeleteTaxonomy(entity: TaxonomyEntity) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/taxonomy/${entity}/${id}`),
+    onSuccess: () => invalidateTaxonomy(queryClient, entity),
+  });
+}

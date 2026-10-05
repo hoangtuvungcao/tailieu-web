@@ -44,6 +44,10 @@ export function DocumentsPage() {
   const facultyId = params.get('facultyId') ?? undefined;
   const documentTypeId = params.get('documentTypeId') ?? undefined;
   const fileKind = params.get('fileKind') ?? undefined;
+  // Set by a public profile's document count. Not in the filter panel — it is
+  // not something you pick, it is where you arrived from, so it shows as a chip
+  // you can drop rather than a control you can set.
+  const ownerUserId = params.get('ownerUserId') ?? undefined;
   const sort = params.get('sort') ?? (query ? 'relevance' : 'newest');
   const page = Number(params.get('page') ?? '1');
 
@@ -52,7 +56,7 @@ export function DocumentsPage() {
   const [searchInput, setSearchInput] = useState(query);
   useEffect(() => setSearchInput(query), [query]);
 
-  const filters = { q: query || undefined, facultyId, documentTypeId, fileKind, sort, page, limit: 20 };
+  const filters = { q: query || undefined, facultyId, documentTypeId, fileKind, ownerUserId, sort, page, limit: 20 };
 
   // Two hooks, one result: the search endpoint when there is a query, the plain
   // list otherwise. They return different shapes (search adds highlights and a
@@ -80,7 +84,7 @@ export function DocumentsPage() {
     updateParam('q', searchInput.trim() || undefined);
   }
 
-  const activeFilterCount = [facultyId, documentTypeId, fileKind].filter(Boolean).length;
+  const activeFilterCount = [facultyId, documentTypeId, fileKind, ownerUserId].filter(Boolean).length;
 
   const documents = query
     ? (searchQuery.data?.hits.map((hit) => ({
@@ -216,6 +220,15 @@ export function DocumentsPage() {
             <FilterChip
               label={FILE_KINDS.find((k) => k.value === fileKind)?.label ?? fileKind}
               onClear={() => updateParam('fileKind', undefined)}
+            />
+          ) : null}
+          {ownerUserId ? (
+            // No name to show: the profile page is the only thing that knows it,
+            // and fetching a profile to label a chip would be a request for
+            // nothing. The wording says where the filter came from instead.
+            <FilterChip
+              label="Tài liệu của một tác giả"
+              onClear={() => updateParam('ownerUserId', undefined)}
             />
           ) : null}
         </div>

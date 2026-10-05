@@ -10,6 +10,7 @@ import {
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { BookmarkButton } from '@/components/BookmarkButton';
 import { Badge, Button, Card, CardContent, ErrorState, Skeleton, Spinner } from '@/components/ui';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
@@ -124,7 +125,16 @@ export function DocumentDetailPage() {
           <h1 className="mt-3 text-2xl font-bold tracking-tight">{document.title}</h1>
 
           <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--color-muted-foreground)]">
-            <span>{document.owner?.displayName ?? 'Ẩn danh'}</span>
+            {document.owner ? (
+              <Link
+                to={`/users/${document.owner.id}`}
+                className="hover:text-[var(--color-primary)]"
+              >
+                {document.owner.displayName}
+              </Link>
+            ) : (
+              <span>Ẩn danh</span>
+            )}
             <span aria-hidden>·</span>
             <span>{formatRelativeTime(document.createdAt)}</span>
             <span aria-hidden>·</span>
@@ -214,6 +224,12 @@ export function DocumentDetailPage() {
                 <Download className="h-4 w-4" />
                 Tải xuống
               </Button>
+
+              <BookmarkButton
+                target="document"
+                id={document.id}
+                className="w-full justify-center border border-[var(--color-border)]"
+              />
 
               {download.isError ? (
                 <p role="alert" className="text-xs text-[var(--color-destructive)]">

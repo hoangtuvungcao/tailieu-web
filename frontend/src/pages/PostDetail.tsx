@@ -2,6 +2,7 @@ import { ArrowLeft, Heart, MessageSquare, Send, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import { BookmarkButton } from '@/components/BookmarkButton';
 import {
   Avatar,
   Badge,
@@ -113,10 +114,17 @@ export function PostDetailPage() {
         <Card>
           <CardContent className="space-y-4 p-5">
             <div className="flex items-start gap-3">
-              <Avatar name={data.author.displayName} src={data.author.avatarUrl} />
+              <Link to={`/users/${data.author.id}`} className="shrink-0">
+                <Avatar name={data.author.displayName} src={data.author.avatarUrl} />
+              </Link>
 
               <div className="min-w-0 flex-1">
-                <p className="font-medium">{data.author.displayName}</p>
+                <Link
+                  to={`/users/${data.author.id}`}
+                  className="block truncate font-medium hover:text-[var(--color-primary)]"
+                >
+                  {data.author.displayName}
+                </Link>
                 <p className="text-xs text-[var(--color-muted-foreground)]">
                   {formatRelativeTime(data.createdAt)}
                   {data.editedAt ? ' · đã sửa' : ''}
@@ -200,6 +208,8 @@ function PostActions({
         <MessageSquare className="h-4 w-4" aria-hidden />
         {post.stats.comments}
       </span>
+
+      <BookmarkButton target="post" id={post.id} />
 
       {canDelete ? (
         <div className="ml-auto">
@@ -417,11 +427,20 @@ function CommentItem({
   return (
     <li className={cn('space-y-3', isReply && 'border-l-2 border-[var(--color-border)] pl-3')}>
       <div className="flex items-start gap-2.5">
-        <Avatar name={comment.author.displayName} src={comment.author.avatarUrl} size="sm" />
+        {/* Safe to link: the `deleted` branch above returns early, and that is
+            the only case where the API withholds `author.id`. */}
+        <Link to={`/users/${comment.author.id}`} className="shrink-0">
+          <Avatar name={comment.author.displayName} src={comment.author.avatarUrl} size="sm" />
+        </Link>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <span className="text-sm font-medium">{comment.author.displayName}</span>
+            <Link
+              to={`/users/${comment.author.id}`}
+              className="truncate text-sm font-medium hover:text-[var(--color-primary)]"
+            >
+              {comment.author.displayName}
+            </Link>
             <span className="text-[11px] text-[var(--color-muted-foreground)]">
               {formatRelativeTime(comment.createdAt)}
               {comment.editedAt ? ' · đã sửa' : ''}

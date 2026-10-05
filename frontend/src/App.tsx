@@ -1,5 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  Bell,
+  Bookmark as BookmarkIcon,
   BookOpen,
   FolderOpen,
   Home as HomeIcon,
@@ -9,6 +11,7 @@ import {
   Moon,
   Search,
   Sun,
+  Trophy,
   Upload,
   User as UserIcon,
   X,
@@ -18,11 +21,16 @@ import { Link, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-
 
 import { Badge, Button, Spinner } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
+import { useUnreadCount } from '@/lib/social-hooks';
 import { cn } from '@/lib/utils';
 import { CollectionDetailPage } from '@/pages/CollectionDetail';
 import { CollectionsPage } from '@/pages/Collections';
+import { BookmarksPage } from '@/pages/Bookmarks';
 import { CommunityPage } from '@/pages/Community';
+import { LeaderboardPage } from '@/pages/Leaderboard';
+import { NotificationsPage } from '@/pages/Notifications';
 import { PostDetailPage } from '@/pages/PostDetail';
+import { ProfilePage } from '@/pages/Profile';
 import { DocumentDetailPage } from '@/pages/DocumentDetail';
 import { DocumentsPage } from '@/pages/Documents';
 import { HomePage } from '@/pages/Home';
@@ -40,6 +48,9 @@ const AdminDashboardPage = lazy(() =>
 );
 const AdminUsersPage = lazy(() =>
   import('@/pages/admin/Users').then((m) => ({ default: m.AdminUsersPage })),
+);
+const AdminTaxonomyPage = lazy(() =>
+  import('@/pages/admin/Taxonomy').then((m) => ({ default: m.AdminTaxonomyPage })),
 );
 const AdminReportsPage = lazy(() =>
   import('@/pages/admin/Other').then((m) => ({ default: m.AdminReportsPage })),
@@ -75,6 +86,19 @@ const NAV_ITEMS = [
   // who clicked it. Faculty filtering is reachable from the homepage chips.
 ];
 
+/**
+ * Shared by the static nav and the signed-in-only entries, so the two cannot
+ * drift into looking like different kinds of link.
+ */
+function desktopNavClass({ isActive }: { isActive: boolean }): string {
+  return cn(
+    'rounded-md px-3 py-2 text-sm font-medium transition-colors',
+    isActive
+      ? 'bg-[var(--color-secondary)] text-[var(--color-foreground)]'
+      : 'text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]',
+  );
+}
+
 function ThemeToggle() {
   const [dark, setDark] = useState(() =>
     document.documentElement.classList.contains('dark'),
@@ -101,6 +125,40 @@ function ThemeToggle() {
     >
       {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
     </Button>
+  );
+}
+
+/**
+ * The unread badge in the header.
+ *
+ * Backed by a denormalised counter that the API reads as a primary-key lookup,
+ * answering 304 when nothing changed — so an idle tab pays for the poll in
+ * headers only. That is what makes a 60-second interval affordable here, where
+ * counting notification rows on a timer would not be.
+ */
+function NotificationBell() {
+  const { isAuthenticated } = useAuth();
+  const { data } = useUnreadCount();
+  const count = data?.unread ?? 0;
+
+  if (!isAuthenticated) return null;
+
+  return (
+    <Link
+      to="/notifications"
+      className="relative inline-flex h-10 w-10 items-center justify-center rounded-md hover:bg-[var(--color-muted)]"
+      // The count goes in the label rather than only in the badge: a number
+      // inside a coloured dot is invisible to a screen reader.
+      aria-label={count > 0 ? `Thông báo, ${count} chưa đọc` : 'Thông báo'}
+      title="Thông báo"
+    >
+      <Bell className="h-5 w-5" aria-hidden />
+      {count > 0 ? (
+        <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--color-destructive)] px-1 text-[11px] font-semibold text-[var(--color-destructive-foreground)]">
+          {count > 99 ? '99+' : count}
+        </span>
+      ) : null}
+    </Link>
   );
 }
 
@@ -137,22 +195,22 @@ function Header() {
 
         <nav aria-label="Điều hướng chính" className="hidden items-center gap-1 md:flex">
           {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                cn(
-                  'rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-[var(--color-secondary)] text-[var(--color-foreground)]'
-                    : 'text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]',
-                )
-              }
-            >
+            <NavLink key={item.to} to={item.to} end={item.end} className={desktopNavClass}>
               {item.label}
             </NavLink>
           ))}
+          {/* Signed-in only: a signed-out visitor has nothing saved, and the
+              link would only bounce them to a login form. Not in the bottom
+              bar — that already carries five destinations, and a sixth leaves
+              every label fighting for 60px on a 360px screen. */}
+          {isAuthenticated ? (
+            <NavLink to="/bookmarks" className={desktopNavClass}>
+              Đã lưu
+            </NavLink>
+          ) : null}
+          <NavLink to="/leaderboards" className={desktopNavClass}>
+            Xếp hạng
+          </NavLink>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
@@ -163,6 +221,7 @@ function Header() {
             </Button>
           </Link>
 
+          <NotificationBell />
           <ThemeToggle />
 
           {isLoading ? (
@@ -250,14 +309,30 @@ function Header() {
               </NavLink>
             ))}
             {isAuthenticated ? (
-              <NavLink
-                to="/upload"
-                className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-muted-foreground)]"
-              >
-                <Upload className="h-4 w-4" />
-                Tải lên
-              </NavLink>
+              <>
+                <NavLink
+                  to="/upload"
+                  className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-muted-foreground)]"
+                >
+                  <Upload className="h-4 w-4" />
+                  Tải lên
+                </NavLink>
+                <NavLink
+                  to="/bookmarks"
+                  className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-muted-foreground)]"
+                >
+                  <BookmarkIcon className="h-4 w-4" />
+                  Đã lưu
+                </NavLink>
+              </>
             ) : null}
+            <NavLink
+              to="/leaderboards"
+              className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-muted-foreground)]"
+            >
+              <Trophy className="h-4 w-4" />
+              Xếp hạng
+            </NavLink>
           </div>
         </nav>
       ) : null}
@@ -438,7 +513,26 @@ export function App() {
         <Route path="community/:id" element={<PostDetailPage />} />
         <Route path="collections" element={<CollectionsPage />} />
         <Route path="collections/:id" element={<CollectionDetailPage />} />
+        {/* Public: a ranking nobody can see does not motivate anyone. */}
+        <Route path="leaderboards" element={<LeaderboardPage />} />
+        <Route
+          path="notifications"
+          element={
+            <RequireAuth>
+              <NotificationsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="bookmarks"
+          element={
+            <RequireAuth>
+              <BookmarksPage />
+            </RequireAuth>
+          }
+        />
         <Route path="documents/:id" element={<DocumentDetailPage />} />
+        <Route path="users/:id" element={<ProfilePage />} />
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route
@@ -471,6 +565,7 @@ export function App() {
             }
           />
           <Route path="users" element={<Suspense fallback={<AdminFallback />}><AdminUsersPage /></Suspense>} />
+          <Route path="taxonomy" element={<Suspense fallback={<AdminFallback />}><AdminTaxonomyPage /></Suspense>} />
           <Route path="reports" element={<Suspense fallback={<AdminFallback />}><AdminReportsPage /></Suspense>} />
           <Route path="audit" element={<Suspense fallback={<AdminFallback />}><AdminAuditPage /></Suspense>} />
           <Route path="storage" element={<Suspense fallback={<AdminFallback />}><AdminStoragePage /></Suspense>} />
