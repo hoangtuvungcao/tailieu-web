@@ -6,17 +6,14 @@ import {
   FolderOpen,
   Home as HomeIcon,
   LogOut,
-  Menu,
   MessageSquare,
   Moon,
   Search,
   Sun,
-  Trophy,
   Upload,
   User as UserIcon,
-  X,
 } from 'lucide-react';
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 
 import { Badge, Button, Spinner } from '@/components/ui';
@@ -108,18 +105,34 @@ function desktopNavClass({ isActive }: { isActive: boolean }): string {
 }
 
 /**
- * Mobile drawer entry.
+ * Destinations in the phone bottom bar.
  *
- * Taller than the desktop link because this one is tapped, not clicked: 44px is
- * the smallest target a thumb hits reliably. `whitespace-nowrap` for the same
- * reason as the desktop nav — "Bộ sưu tập" must not become two lines.
+ * Not the same list as the desktop nav, and the difference is deliberate. The
+ * bar holds five and no more: a sixth leaves every label fighting for 60px on a
+ * 360px screen, which is how "Bộ sưu tập" ended up on two lines. So the bar
+ * carries the four things a reader does constantly plus the one action they
+ * take — and "Đã lưu" earns its slot over "Bộ sưu tập", because it is your own
+ * list rather than a public one. Collections and the ranking live on the
+ * profile, which the header now links to at every width.
  */
-function mobileNavClass({ isActive }: { isActive: boolean }): string {
+const MOBILE_NAV_ITEMS = [
+  { to: '/', label: 'Trang chủ', icon: HomeIcon, end: true },
+  { to: '/documents', label: 'Tài liệu', icon: BookOpen },
+  { to: '/community', label: 'Cộng đồng', icon: MessageSquare },
+  { to: '/bookmarks', label: 'Đã lưu', icon: BookmarkIcon, authOnly: true },
+];
+
+/**
+ * Phone bottom-bar entry.
+ *
+ * `min-w-0` as well as `whitespace-nowrap`: nowrap stops a label becoming two
+ * lines, and `min-w-0` stops five of them collectively forcing the bar wider
+ * than the screen — which is what it did before, 382px inside a 360px viewport.
+ */
+function bottomNavClass({ isActive }: { isActive: boolean }): string {
   return cn(
-    'flex min-h-11 items-center gap-3 whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors',
-    isActive
-      ? 'bg-[var(--color-secondary)] text-[var(--color-foreground)]'
-      : 'text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]',
+    'flex min-w-0 flex-1 flex-col items-center gap-1 whitespace-nowrap py-2.5 text-[11px] font-medium',
+    isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted-foreground)]',
   );
 }
 
@@ -188,14 +201,6 @@ function NotificationBell() {
 
 function Header() {
   const { user, isAuthenticated, isLoading, signOut } = useAuth();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const location = useLocation();
-
-  // Close the mobile drawer on navigation, otherwise it stays open over the
-  // page the user just navigated to.
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [location.pathname]);
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-background)]/85 backdrop-blur">
@@ -265,22 +270,34 @@ function Header() {
                   Tải lên
                 </Button>
               </Link>
-              <div className="hidden items-center gap-2 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 sm:flex">
-                <UserIcon className="h-4 w-4 text-[var(--color-muted-foreground)]" />
-                {/* The name is the widest thing in the header and the least
-                    load-bearing: the icon still identifies the menu, and the
-                    role badge still says who you are. It appears at `xl`, where
-                    there is room for it. */}
-                <span className="hidden max-w-32 truncate text-sm xl:inline">
-                  {user.displayName}
-                </span>
+              {/* Visible at every width, including phones: this is now the only
+                  way to reach your own profile, and the profile is the hub for
+                  saved items, collections, the ranking and the admin screens.
+                  The role badge stays `sm`+ — on a 360px header it would push
+                  the row over, and an administrator reaches `/admin` from the
+                  profile instead. */}
+              <div className="flex items-center gap-2 rounded-md border border-[var(--color-border)] px-2.5 py-1.5">
+                <Link
+                  to={`/users/${user.id}`}
+                  className="flex items-center gap-2"
+                  aria-label="Hồ sơ của tôi"
+                  title="Hồ sơ của tôi"
+                >
+                  <UserIcon className="h-4 w-4 text-[var(--color-muted-foreground)]" aria-hidden />
+                  {/* The name is the widest thing in the header and the least
+                      load-bearing: the icon still identifies the menu, and the
+                      profile itself says who you are. It appears at `xl`. */}
+                  <span className="hidden max-w-32 truncate text-sm xl:inline">
+                    {user.displayName}
+                  </span>
+                </Link>
                 {user.roles.includes('admin') ||
                 user.roles.includes('super_admin') ||
                 user.roles.includes('moderator') ||
                 user.roles.includes('faculty_moderator') ? (
                   // Only roles that can actually reach at least one admin
                   // screen. Showing it to a student would be a link to a wall.
-                  <Link to="/admin" aria-label="Trang quản trị">
+                  <Link to="/admin" aria-label="Trang quản trị" className="hidden sm:block">
                     <Badge variant="gold">Quản trị</Badge>
                   </Link>
                 ) : null}
@@ -307,79 +324,8 @@ function Header() {
               </Link>
             </div>
           )}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setMobileOpen((open) => !open)}
-            aria-label={mobileOpen ? 'Đóng menu' : 'Mở menu'}
-            aria-expanded={mobileOpen}
-          >
-            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
         </div>
       </div>
-
-      {mobileOpen ? (
-        <>
-          {/* Dims the page so the drawer reads as a layer above it rather than
-              the page having reflowed. It is also the tap target that closes
-              the menu, which is otherwise only possible via the toggle.
-
-              `absolute`, not `fixed`: the header carries `backdrop-blur`, and a
-              `backdrop-filter` makes an element the containing block for its
-              fixed descendants. A `fixed` backdrop here would have been sized
-              to the 64px header and never seen — measured, then fixed. */}
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-hidden
-            onClick={() => setMobileOpen(false)}
-            className="absolute inset-x-0 top-full z-30 h-[100dvh] bg-black/40 lg:hidden"
-          />
-
-          <nav
-            aria-label="Điều hướng di động"
-            // `top-full` hangs it off the header bar. The header is `sticky`,
-            // which counts as positioned, so it is the containing block.
-            //
-            // Capped and scrollable: a long list on a short screen would
-            // otherwise put the last entries somewhere unreachable.
-            className="absolute inset-x-0 top-full z-40 max-h-[calc(100dvh-4rem)] overflow-y-auto border-t border-[var(--color-border)] bg-[var(--color-background)] shadow-[var(--shadow-lifted)] lg:hidden"
-          >
-            <div className="container-page flex flex-col gap-0.5 py-3">
-              {NAV_ITEMS.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.end} className={mobileNavClass}>
-                  <item.icon className="h-4 w-4" aria-hidden />
-                  {item.label}
-                </NavLink>
-              ))}
-
-              {isAuthenticated ? (
-                <>
-                  <NavLink to="/upload" className={mobileNavClass}>
-                    <Upload className="h-4 w-4" aria-hidden />
-                    Tải lên
-                  </NavLink>
-                  <NavLink to="/bookmarks" className={mobileNavClass}>
-                    <BookmarkIcon className="h-4 w-4" aria-hidden />
-                    Đã lưu
-                  </NavLink>
-                </>
-              ) : null}
-
-              {/* Set apart: every other entry above is a primary destination,
-                  and a ranking is not one of them. */}
-              <div className="my-1 border-t border-[var(--color-border)]" aria-hidden />
-              <NavLink to="/leaderboards" className={mobileNavClass}>
-                <Trophy className="h-4 w-4" aria-hidden />
-                Xếp hạng
-              </NavLink>
-            </div>
-          </nav>
-        </>
-      ) : null}
     </header>
   );
 }
@@ -420,53 +366,25 @@ function MobileNav() {
       )}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="flex items-stretch justify-around">
-        {NAV_ITEMS.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            className={({ isActive }) =>
-              cn(
-                'flex flex-1 flex-col items-center gap-1 whitespace-nowrap py-2.5 text-[11px] font-medium',
-                isActive
-                  ? 'text-[var(--color-primary)]'
-                  : 'text-[var(--color-muted-foreground)]',
-              )
-            }
-          >
+      <div className="flex items-stretch">
+        {MOBILE_NAV_ITEMS.filter((item) => !item.authOnly || isAuthenticated).map((item) => (
+          <NavLink key={item.to} to={item.to} end={item.end} className={bottomNavClass}>
             <item.icon className="h-5 w-5" aria-hidden />
             {item.label}
           </NavLink>
         ))}
 
-        {isAuthenticated ? (
-          <NavLink
-            to="/upload"
-            className={({ isActive }) =>
-              cn(
-                'flex flex-1 flex-col items-center gap-1 whitespace-nowrap py-2.5 text-[11px] font-medium',
-                isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted-foreground)]',
-              )
-            }
-          >
+        {/* The fifth slot is the one action rather than another destination.
+            Signed out it becomes the way in, which is the only thing a visitor
+            can usefully do from here. */}
+        <NavLink to={isAuthenticated ? '/upload' : '/login'} className={bottomNavClass}>
+          {isAuthenticated ? (
             <Upload className="h-5 w-5" aria-hidden />
-            Tải lên
-          </NavLink>
-        ) : (
-          <NavLink
-            to="/login"
-            className={({ isActive }) =>
-              cn(
-                'flex flex-1 flex-col items-center gap-1 whitespace-nowrap py-2.5 text-[11px] font-medium',
-                isActive ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted-foreground)]',
-              )
-            }
-          >
+          ) : (
             <UserIcon className="h-5 w-5" aria-hidden />
-            Đăng nhập
-          </NavLink>
-        )}
+          )}
+          {isAuthenticated ? 'Tải lên' : 'Đăng nhập'}
+        </NavLink>
       </div>
     </nav>
   );
@@ -544,8 +462,24 @@ export function App() {
   // Drop all cached data when the signed-in identity changes. Without this,
   // signing out and in as someone else briefly shows the previous user's
   // documents from the query cache — a real disclosure on a shared machine.
+  //
+  // Only a CHANGE clears the cache — never the first resolution. `user` is
+  // undefined while the session is still being read, so "undefined -> A" is
+  // what every single page load looks like, and clearing there wipes the
+  // queries that child components started in the same commit. The page then
+  // waits forever on data that already arrived: measured, every route NOT
+  // gated behind `RequireAuth` sat on its loading skeleton after a reload,
+  // while `/bookmarks` and `/notifications` were fine — because RequireAuth
+  // mounts its children after auth has settled and so escaped the wipe.
+  //
+  // Skipping it is safe on a fresh load: the cache is empty at that point
+  // anyway, so there is nothing of anyone else's to leak.
+  const previousUserId = useRef<string | undefined>(undefined);
   useEffect(() => {
-    queryClient.clear();
+    if (previousUserId.current !== undefined && previousUserId.current !== user?.id) {
+      queryClient.clear();
+    }
+    previousUserId.current = user?.id;
   }, [user?.id, queryClient]);
 
   return (

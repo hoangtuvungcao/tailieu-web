@@ -1,13 +1,16 @@
 import {
   Award,
+  Bookmark,
   BookOpen,
   CalendarDays,
   FileText,
+  FolderOpen,
   Heart,
   MessageSquare,
   ShieldCheck,
   Sparkles,
   Star,
+  Trophy,
   Users,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -16,6 +19,7 @@ import { Link, useParams } from 'react-router-dom';
 import { FollowButton } from '@/components/FollowButton';
 import { Avatar, Button, Card, CardContent, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { ApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth';
 import { useFollowers, useFollowing, usePosts, useProfile } from '@/lib/social-hooks';
 import { cn, formatDate } from '@/lib/utils';
 import { PostCard } from '@/pages/Community';
@@ -43,6 +47,7 @@ const BADGE_ICONS: Record<string, typeof Award> = {
 
 export function ProfilePage() {
   const { id } = useParams<{ id: string }>();
+  const { user: me } = useAuth();
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<'posts' | 'followers' | 'following'>('posts');
 
@@ -88,6 +93,24 @@ export function ProfilePage() {
   }
 
   const user = profile.data;
+
+  // Your own profile carries the destinations the bottom bar has no room for;
+  // somebody else's carries a follow button instead.
+  //
+  // Compared against the client's own id rather than read from `user.isSelf`.
+  // The server does send `isSelf` and computes it correctly — but it answers
+  // for whichever viewer the request was authenticated as, and this query is
+  // issued from the first render, which can be *before* the session has been
+  // restored. In that window the API answers "not you" for an anonymous
+  // caller, correctly, and only the client knows better. Measured: the profile
+  // came back with `isSelf: false` while signed in as its owner.
+  // `FollowButton` compares the same way, so the two cannot disagree.
+  const isOwnProfile = me?.id === user.id;
+  // Cosmetic only: it hides a link that would land on a 403. Every admin screen
+  // re-checks the permission server-side.
+  const canModerate = ['admin', 'super_admin', 'moderator', 'faculty_moderator'].some((role) =>
+    me?.roles.includes(role),
+  );
   const postList = posts.data?.posts ?? [];
   const meta = posts.data?.meta;
 
@@ -152,7 +175,42 @@ export function ProfilePage() {
                 ) : null}
               </div>
 
-              <FollowButton userId={user.id} />
+              {isOwnProfile ? (
+                /* Your own profile is where the phone's navigation runs out.
+                   The bottom bar holds five destinations and these are the ones
+                   that did not fit; the header's account button is visible at
+                   every width and leads here. */
+                <div className="flex flex-wrap gap-2">
+                  <Link to="/collections">
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <FolderOpen className="h-4 w-4" aria-hidden />
+                      Bộ sưu tập
+                    </Button>
+                  </Link>
+                  <Link to="/bookmarks">
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Bookmark className="h-4 w-4" aria-hidden />
+                      Đã lưu
+                    </Button>
+                  </Link>
+                  <Link to="/leaderboards">
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Trophy className="h-4 w-4" aria-hidden />
+                      Xếp hạng
+                    </Button>
+                  </Link>
+                  {canModerate ? (
+                    <Link to="/admin">
+                      <Button variant="outline" size="sm" className="gap-2">
+                        <ShieldCheck className="h-4 w-4" aria-hidden />
+                        Trang quản trị
+                      </Button>
+                    </Link>
+                  ) : null}
+                </div>
+              ) : (
+                <FollowButton userId={user.id} />
+              )}
             </div>
 
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
