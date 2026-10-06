@@ -226,18 +226,24 @@ export function useDocumentTypes() {
 // --- Mutations ---------------------------------------------------------------
 
 /**
- * Download a document.
+ * Download a document, or one file of it.
  *
  * The API returns a short-lived signed URL rather than the file, so the browser
  * must be sent to it. A hidden anchor click is used instead of
  * `window.location =` because the latter would navigate the SPA away from the
  * current page and lose all state.
+ *
+ * `fileId` is optional because a document may hold several files. Omitting it
+ * asks the server for the primary one, which is what a single-file document
+ * wants and what an older caller expects.
  */
 export function useDownloadDocument() {
   return useMutation({
-    mutationFn: async (documentId: string) =>
+    mutationFn: async (input: { documentId: string; fileId?: string }) =>
       api.get<{ url: string; fileName: string; mimeType: string }>(
-        `/documents/${documentId}/download`,
+        `/documents/${input.documentId}/download${
+          input.fileId ? `?fileId=${encodeURIComponent(input.fileId)}` : ''
+        }`,
       ),
     onSuccess: (data) => {
       const anchor = document.createElement('a');

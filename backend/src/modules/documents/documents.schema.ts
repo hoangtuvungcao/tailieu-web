@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { env } from '../../config/env.js';
 import { paginationSchema } from '../../lib/pagination.js';
 import { uuidSchema } from '../../lib/validation.js';
 
@@ -31,11 +32,25 @@ export const createDocumentSchema = z
     visibility: z.enum(['public', 'internal', 'private']).optional().default('internal'),
     language: z.string().trim().max(10).optional().default('vi'),
 
-    /** Ids of COMPLETED upload sessions. At least one is required. */
+    /**
+     * Ids of COMPLETED upload sessions. At least one is required.
+     *
+     * Order is meaningful: the server marks the first as the document's primary
+     * file, and that is the one the detail page previews and offers by default.
+     *
+     * The ceiling comes from `MAX_FILES_PER_DOCUMENT` rather than a literal,
+     * because the multipart path in `app.ts` already reads that setting. A
+     * literal here meant an operator who raised it to 20 got 20 files through
+     * the one-shot path and a 422 through this one, with nothing in the
+     * configuration to explain the difference.
+     */
     uploadIds: z
       .array(uuidSchema)
       .min(1, 'Cần ít nhất một tệp đã tải lên hoàn tất.')
-      .max(10, 'Mỗi tài liệu chỉ được có tối đa 10 tệp.'),
+      .max(
+        env.MAX_FILES_PER_DOCUMENT,
+        `Mỗi tài liệu chỉ được có tối đa ${env.MAX_FILES_PER_DOCUMENT} tệp.`,
+      ),
 
     tags: z.array(z.string().trim().min(1).max(60)).max(20).optional().default([]),
 

@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { CollectionDetailPage } from '@/pages/CollectionDetail';
 import { CollectionsPage } from '@/pages/Collections';
 import { BookmarksPage } from '@/pages/Bookmarks';
+import { MyReportsPage } from '@/pages/MyReports';
 import { CommunityPage } from '@/pages/Community';
 import { LeaderboardPage } from '@/pages/Leaderboard';
 import { NotificationsPage } from '@/pages/Notifications';
@@ -51,6 +52,9 @@ const AdminUsersPage = lazy(() =>
 );
 const AdminTaxonomyPage = lazy(() =>
   import('@/pages/admin/Taxonomy').then((m) => ({ default: m.AdminTaxonomyPage })),
+);
+const AdminDocumentsPage = lazy(() =>
+  import('@/pages/admin/Documents').then((m) => ({ default: m.AdminDocumentsPage })),
 );
 const AdminReportsPage = lazy(() =>
   import('@/pages/admin/Other').then((m) => ({ default: m.AdminReportsPage })),
@@ -357,8 +361,8 @@ function Header() {
 function Footer() {
   return (
     <footer className="mt-16 border-t border-[var(--color-border)] py-8">
-      <div className="container-page flex flex-col gap-2 text-sm text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:justify-between">
-        <p className="flex items-center gap-2">
+      <div className="container-page flex flex-col items-center justify-center gap-3 text-center text-sm text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:justify-between sm:text-left">
+        <p className="flex items-center justify-center gap-2 sm:justify-start">
           <LogoMark className="h-6 w-6" decorative />
           <span>TAILIEU TTN — Kho tri thức cộng đồng Đại học Tây Nguyên</span>
         </p>
@@ -536,6 +540,16 @@ export function App() {
             </RequireAuth>
           }
         />
+        {/* What became of the reports you filed. Reached from your own profile
+            and from the confirmation in the report dialog. */}
+        <Route
+          path="reports"
+          element={
+            <RequireAuth>
+              <MyReportsPage />
+            </RequireAuth>
+          }
+        />
         <Route path="documents/:id" element={<DocumentDetailPage />} />
         <Route path="users/:id" element={<ProfilePage />} />
         <Route
@@ -579,6 +593,7 @@ export function App() {
           />
           <Route path="users" element={<Suspense fallback={<AdminFallback />}><AdminUsersPage /></Suspense>} />
           <Route path="taxonomy" element={<Suspense fallback={<AdminFallback />}><AdminTaxonomyPage /></Suspense>} />
+          <Route path="documents" element={<Suspense fallback={<AdminFallback />}><AdminDocumentsPage /></Suspense>} />
           <Route path="reports" element={<Suspense fallback={<AdminFallback />}><AdminReportsPage /></Suspense>} />
           <Route path="audit" element={<Suspense fallback={<AdminFallback />}><AdminAuditPage /></Suspense>} />
           <Route path="storage" element={<Suspense fallback={<AdminFallback />}><AdminStoragePage /></Suspense>} />

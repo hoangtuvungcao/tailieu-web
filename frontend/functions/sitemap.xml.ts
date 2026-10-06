@@ -101,7 +101,7 @@ async function fetchDocuments(origin: string): Promise<{ id: string; updatedAt?:
 
 export const onRequest: PagesFunction<Env> = async (context) => {
   const origin = new URL(context.request.url).origin;
-  const apiOrigin = context.env.API_ORIGIN ?? 'http://localhost:4000';
+  const apiOrigin = context.env.API_ORIGIN ?? 'http://localhost:3000';
 
   const documents = await fetchDocuments(apiOrigin);
 

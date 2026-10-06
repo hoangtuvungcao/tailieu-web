@@ -1,8 +1,9 @@
-import { ArrowLeft, Heart, MessageSquare, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Flag, Heart, MessageSquare, Send, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { BookmarkButton } from '@/components/BookmarkButton';
+import { ReportDialog } from '@/components/ReportDialog';
 import {
   Avatar,
   Badge,
@@ -215,9 +216,11 @@ function PostActions({
   confirmDelete: boolean;
   setConfirmDelete: (value: boolean) => void;
 }) {
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const setLike = useSetLike();
   const remove = useDeletePost();
+  const [reportOpen, setReportOpen] = useState(false);
 
   const canDelete = post.permissions.canDelete;
 
@@ -247,6 +250,25 @@ function PostActions({
 
       <BookmarkButton target="post" id={post.id} />
 
+      {user?.id !== post.author.id ? (
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Báo cáo bài đăng"
+          className="gap-1.5 text-xs text-[var(--color-destructive)] border-[var(--color-destructive)]/30 hover:bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)]"
+          onClick={() => {
+            if (!isAuthenticated) {
+              navigate('/login');
+            } else {
+              setReportOpen(true);
+            }
+          }}
+        >
+          <Flag className="h-3.5 w-3.5" aria-hidden />
+          Báo cáo
+        </Button>
+      ) : null}
+
       {canDelete ? (
         <div className="ml-auto">
           {confirmDelete ? (
@@ -274,6 +296,15 @@ function PostActions({
             </Button>
           )}
         </div>
+      ) : null}
+
+      {reportOpen ? (
+        <ReportDialog
+          targetType="post"
+          targetId={post.id}
+          targetTitle={post.title || post.body.slice(0, 60)}
+          onClose={() => setReportOpen(false)}
+        />
       ) : null}
     </div>
   );
@@ -415,11 +446,13 @@ function CommentItem({
   targetId: string;
   isReply?: boolean;
 }) {
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const setLike = useSetCommentLike();
   const remove = useDeleteComment();
   const [replying, setReplying] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const replies = comment.replies ?? [];
 
@@ -561,6 +594,24 @@ function CommentItem({
                 )}
               </div>
             ) : null}
+
+            {user?.id !== comment.author.id ? (
+              <button
+                type="button"
+                aria-label="Báo cáo bình luận"
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    navigate('/login');
+                  } else {
+                    setReportOpen(true);
+                  }
+                }}
+                className="rounded px-1.5 py-0.5 text-xs text-[var(--color-destructive)] hover:bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)]"
+              >
+                <Flag className="mr-1 inline h-3 w-3" aria-hidden />
+                Báo cáo
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -593,6 +644,15 @@ function CommentItem({
             />
           ))}
         </ul>
+      ) : null}
+
+      {reportOpen ? (
+        <ReportDialog
+          targetType="comment"
+          targetId={comment.id}
+          targetTitle={comment.body.slice(0, 60)}
+          onClose={() => setReportOpen(false)}
+        />
       ) : null}
     </li>
   );

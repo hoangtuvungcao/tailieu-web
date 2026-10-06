@@ -1,4 +1,11 @@
-import { CheckCircle2, FileUp, Upload as UploadIcon, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  FileUp,
+  RotateCcw,
+  TriangleAlert,
+  Upload as UploadIcon,
+  X,
+} from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -22,8 +29,18 @@ import { cn, formatBytes } from '@/lib/utils';
  * Chunks are sent sequentially rather than in parallel. Parallelism would be
  * faster on a fast connection, but on the laptop-behind-a-tunnel deployment
  * this targets, concurrent 8MB bodies compete for one upstream and mostly
- * produce timeouts that then need retrying.
+ * produce timeouts that then need retrying. The same reasoning is why the
+ * FILES are uploaded one after another rather than at once: ten concurrent
+ * uploads would multiply that contention by ten.
  */
+
+/**
+ * The server's own ceiling. `documents.schema.ts` rejects more than ten
+ * `uploadIds`, so accepting an eleventh here would only produce a document
+ * that cannot be created. Enforced in the picker rather than at publish, so
+ * the user is told while choosing files instead of after uploading them.
+ */
+const MAX_FILES = 10;
 
 interface UploadState {
   fileName: string;
@@ -37,6 +54,17 @@ interface UploadState {
   completed: { contentHash: string; fileKind: string; sizeBytes: number } | null;
 }
 
+interface UploadItem {
+  /**
+   * A synthetic key, because nothing about a `File` is a stable React key:
+   * two files may legitimately share a name and a size, and the same file can
+   * be added twice under different names. Assigned once, never recomputed.
+   */
+  key: string;
+  file: File;
+  upload: UploadState;
+}
+
 const INITIAL: UploadState = {
   fileName: '',
   sizeBytes: 0,
@@ -48,14 +76,22 @@ const INITIAL: UploadState = {
   completed: null,
 };
 
+/** Two entries are the same file if all three of these match. */
+function isSameFile(a: File, b: File) {
+  return a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
+}
+
 export function UploadPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [file, setFile] = useState<File | null>(null);
-  const [upload, setUpload] = useState<UploadState>(INITIAL);
+  const [items, setItems] = useState<UploadItem[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const nextKey = useRef(0);
 
   const [form, setForm] = useState({
     title: '',
@@ -72,36 +108,91 @@ export function UploadPage() {
   const programs = usePrograms(form.facultyId || undefined);
   const documentTypes = useDocumentTypes();
 
-  const onDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    setDragging(false);
-    const dropped = event.dataTransfer.files[0];
-    if (dropped) selectFile(dropped);
-  }, []);
-
-  function selectFile(selected: File) {
-    setFile(selected);
-    setUpload({ ...INITIAL, fileName: selected.name, sizeBytes: selected.size });
-    // Pre-fill the title from the filename minus its extension, which is
-    // usually most of what the user would type anyway.
-    setForm((current) => ({
-      ...current,
-      title: current.title || selected.name.replace(/\.[^.]+$/, ''),
-    }));
+  /** Replace one item's upload state, leaving every other row untouched. */
+  function patchItem(key: string, next: Partial<UploadState>) {
+    setItems((current) =>
+      current.map((row) =>
+        row.key === key ? { ...row, upload: { ...row.upload, ...next } } : row,
+      ),
+    );
   }
 
   /**
-   * Send the file chunk by chunk.
+   * Add files to the queue.
+   *
+   * Rejections are counted and reported rather than silently dropped: a user
+   * who drags twelve files and sees ten rows has to be told why, or they will
+   * assume the page lost two of them.
+   */
+  function addFiles(incoming: FileList | File[]) {
+    const candidates = Array.from(incoming);
+    const accepted: UploadItem[] = [];
+    let duplicates = 0;
+    let overflow = 0;
+
+    for (const candidate of candidates) {
+      if (items.length + accepted.length >= MAX_FILES) {
+        overflow += 1;
+        continue;
+      }
+      const alreadyQueued =
+        items.some((row) => isSameFile(row.file, candidate)) ||
+        accepted.some((row) => isSameFile(row.file, candidate));
+      if (alreadyQueued) {
+        duplicates += 1;
+        continue;
+      }
+      nextKey.current += 1;
+      accepted.push({
+        key: `file-${nextKey.current}`,
+        file: candidate,
+        upload: { ...INITIAL, fileName: candidate.name, sizeBytes: candidate.size },
+      });
+    }
+
+    if (accepted.length > 0) {
+      setItems((current) => [...current, ...accepted]);
+      // Pre-fill the title from the first file only. With several files there
+      // is no single right answer, so the first one is a starting point the
+      // user edits rather than a guess applied to all of them.
+      setForm((current) => ({
+        ...current,
+        title: current.title || (items.length === 0 ? accepted[0].file.name.replace(/\.[^.]+$/, '') : ''),
+      }));
+    }
+
+    const problems: string[] = [];
+    if (duplicates > 0) problems.push(`${duplicates} tệp đã có trong danh sách`);
+    if (overflow > 0) problems.push(`chỉ nhận tối đa ${MAX_FILES} tệp`);
+    setNotice(problems.length > 0 ? `Đã bỏ qua: ${problems.join(', ')}.` : null);
+  }
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      setDragging(false);
+      if (event.dataTransfer.files.length > 0) addFiles(event.dataTransfer.files);
+    },
+    // `addFiles` reads `items`, so the handler has to be rebuilt when they
+    // change; a stale closure would compare against a list that no longer
+    // exists and let a duplicate through.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items],
+  );
+
+  /**
+   * Send one file chunk by chunk.
    *
    * Resume is real: if a previous attempt for the same file exists, the server
    * reports which chunk indices it already holds and those are skipped. A
    * dropped connection costs one chunk, not the whole upload.
+   *
+   * Failures are caught here rather than propagated, so one bad file does not
+   * abandon the rest of the queue.
    */
-  async function startUpload() {
-    if (!file) return;
-
-    abortRef.current = new AbortController();
-    setUpload((state) => ({ ...state, status: 'uploading', error: null }));
+  async function runItem(item: UploadItem) {
+    const { key, file } = item;
+    patchItem(key, { status: 'uploading', error: null });
 
     try {
       // --- Step 1: intent -----------------------------------------------
@@ -117,12 +208,12 @@ export function UploadPage() {
       });
 
       const alreadyHave = new Set(intent.receivedChunks);
-      setUpload((state) => ({
-        ...state,
+      let sent = alreadyHave.size;
+      patchItem(key, {
         uploadId: intent.uploadId,
         totalChunks: intent.totalChunks,
-        completedChunks: alreadyHave.size,
-      }));
+        completedChunks: sent,
+      });
 
       // --- Step 2: chunks -----------------------------------------------
       for (let index = 0; index < intent.totalChunks; index += 1) {
@@ -131,13 +222,14 @@ export function UploadPage() {
         const start = index * intent.chunkSize;
         const blob = file.slice(start, Math.min(start + intent.chunkSize, file.size));
 
-        await uploadChunk(intent.uploadId, index, blob, undefined, abortRef.current.signal);
+        await uploadChunk(intent.uploadId, index, blob, undefined, abortRef.current?.signal);
 
-        setUpload((state) => ({ ...state, completedChunks: state.completedChunks + 1 }));
+        sent += 1;
+        patchItem(key, { completedChunks: sent });
       }
 
       // --- Step 3: assemble ---------------------------------------------
-      setUpload((state) => ({ ...state, status: 'assembling' }));
+      patchItem(key, { status: 'assembling' });
 
       const completed = await api.post<{
         contentHash: string;
@@ -146,43 +238,86 @@ export function UploadPage() {
         deduplicated: boolean;
       }>(`/uploads/${intent.uploadId}/complete`);
 
-      setUpload((state) => ({
-        ...state,
+      patchItem(key, {
         status: 'done',
         completed: {
           contentHash: completed.contentHash,
           fileKind: completed.fileKind,
           sizeBytes: completed.sizeBytes,
         },
-      }));
+      });
     } catch (error) {
-      setUpload((state) => ({
-        ...state,
+      patchItem(key, {
         status: 'error',
         error:
           error instanceof ApiError
             ? error.message
             : 'Tải lên thất bại. Vui lòng kiểm tra kết nối và thử lại.',
-      }));
+      });
     }
   }
 
-  async function cancelUpload() {
+  /** Upload everything still outstanding, one file at a time. */
+  async function startUploads() {
+    // Re-read the queue rather than trusting a captured copy: a retry may have
+    // replaced an item since the render that produced this handler.
+    const queue = items.filter((item) => item.upload.status !== 'done');
+    if (queue.length === 0) return;
+
+    abortRef.current = new AbortController();
+    setRunning(true);
+    setNotice(null);
+    try {
+      for (const item of queue) {
+        await runItem(item);
+      }
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  /** Retry a single failed file without touching the ones that succeeded. */
+  async function retryItem(item: UploadItem) {
+    abortRef.current = new AbortController();
+    setRunning(true);
+    setNotice(null);
+    try {
+      await runItem(item);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function cancelAll() {
     abortRef.current?.abort();
-    if (upload.uploadId) {
-      // Best-effort: telling the server releases the multipart upload and its
-      // parts. If this fails the nightly reaper still cleans it up.
-      await api.delete(`/uploads/${upload.uploadId}`).catch(() => undefined);
-    }
-    setUpload(INITIAL);
-    setFile(null);
+    // Best-effort: telling the server releases the multipart upload and its
+    // parts. If this fails the nightly reaper still cleans it up.
+    await Promise.all(
+      items
+        .filter((item) => item.upload.uploadId && item.upload.status !== 'done')
+        .map((item) => api.delete(`/uploads/${item.upload.uploadId}`).catch(() => undefined)),
+    );
+    setItems([]);
+    setNotice(null);
   }
 
-  /** Create the document from the finished upload. */
-  async function publish() {
-    if (!upload.uploadId) return;
+  async function removeItem(item: UploadItem) {
+    if (item.upload.uploadId && item.upload.status !== 'done') {
+      // Abandoning a session the server still holds parts for.
+      await api.delete(`/uploads/${item.upload.uploadId}`).catch(() => undefined);
+    }
+    setItems((current) => current.filter((row) => row.key !== item.key));
+  }
 
-    setUpload((state) => ({ ...state, status: 'assembling', error: null }));
+  /** Create the document from every finished upload. */
+  async function publish() {
+    const uploadIds = items
+      .map((item) => item.upload.uploadId)
+      .filter((id): id is string => Boolean(id));
+    if (uploadIds.length === 0) return;
+
+    setPublishing(true);
+    setNotice(null);
 
     try {
       const document = await api.post<{ id: string }>('/documents', {
@@ -192,7 +327,10 @@ export function UploadPage() {
         facultyId: form.facultyId,
         programId: form.programId || null,
         visibility: form.visibility,
-        uploadIds: [upload.uploadId],
+        // Order is meaningful: the server marks `index === 0` as the primary
+        // file, and that is the one the detail page previews by default. The
+        // array is in queue order, so the first row the user added is primary.
+        uploadIds,
         tags: form.tags
           .split(',')
           .map((tag) => tag.trim())
@@ -202,23 +340,21 @@ export function UploadPage() {
 
       navigate(`/documents/${document.id}`);
     } catch (error) {
-      setUpload((state) => ({
-        ...state,
-        status: 'error',
-        error: error instanceof ApiError ? error.message : 'Không tạo được tài liệu.',
-      }));
+      setNotice(error instanceof ApiError ? error.message : 'Không tạo được tài liệu.');
+      setPublishing(false);
     }
   }
 
-  const progress =
-    upload.totalChunks > 0 ? Math.round((upload.completedChunks / upload.totalChunks) * 100) : 0;
+  const allDone = items.length > 0 && items.every((item) => item.upload.status === 'done');
+  const doneCount = items.filter((item) => item.upload.status === 'done').length;
+  const totalBytes = items.reduce((sum, item) => sum + item.file.size, 0);
+  const hasUnfinished = items.some(
+    (item) => item.upload.status === 'idle' || item.upload.status === 'error',
+  );
+  const atCapacity = items.length >= MAX_FILES;
 
   const canPublish =
-    upload.status === 'done' &&
-    form.title.trim().length >= 3 &&
-    form.facultyId &&
-    form.documentTypeId &&
-    form.confirmed;
+    allDone && form.title.trim().length >= 3 && form.facultyId && form.documentTypeId && form.confirmed;
 
   return (
     <div className="container-page max-w-3xl py-8">
@@ -228,107 +364,221 @@ export function UploadPage() {
       </p>
 
       {/* --- Drop zone ---------------------------------------------------- */}
-      {!file ? (
-        <div
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-          className={cn(
-            'mt-6 rounded-lg border-2 border-dashed p-12 text-center transition-colors',
-            dragging
+      <div
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (!atCapacity) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        className={cn(
+          'rounded-lg border-2 border-dashed text-center transition-colors',
+          items.length === 0 ? 'mt-6 p-12' : 'mt-6 p-5',
+          atCapacity
+            ? 'border-[var(--color-border)] opacity-60'
+            : dragging
               ? 'border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-800)]'
               : 'border-[var(--color-border)]',
+        )}
+      >
+        <FileUp
+          className={cn(
+            'mx-auto text-[var(--color-muted-foreground)]',
+            items.length === 0 ? 'h-10 w-10' : 'h-6 w-6',
           )}
-        >
-          <FileUp className="mx-auto h-10 w-10 text-[var(--color-muted-foreground)]" aria-hidden />
-          <p className="mt-3 text-sm font-medium">Kéo thả tệp vào đây</p>
+          aria-hidden
+        />
+        <p className={cn('font-medium', items.length === 0 ? 'mt-3 text-sm' : 'mt-2 text-sm')}>
+          {atCapacity
+            ? `Đã đạt giới hạn ${MAX_FILES} tệp`
+            : items.length === 0
+              ? 'Kéo thả tệp vào đây'
+              : 'Thêm tệp khác'}
+        </p>
+        {!atCapacity ? (
           <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
-            hoặc chọn tệp từ máy của bạn
+            {items.length === 0
+              ? 'hoặc chọn tệp từ máy của bạn — có thể chọn nhiều tệp cùng lúc'
+              : `Còn nhận được ${MAX_FILES - items.length} tệp`}
           </p>
-          <Button className="mt-4" onClick={() => fileInputRef.current?.click()}>
-            Chọn tệp
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="sr-only"
-            onChange={(event) => {
-              const selected = event.target.files?.[0];
-              if (selected) selectFile(selected);
-            }}
-          />
+        ) : null}
+        <Button
+          className="mt-4"
+          variant={items.length === 0 ? 'default' : 'outline'}
+          size={items.length === 0 ? 'default' : 'sm'}
+          disabled={atCapacity}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {items.length === 0 ? 'Chọn tệp' : 'Thêm tệp'}
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="sr-only"
+          onChange={(event) => {
+            if (event.target.files?.length) addFiles(event.target.files);
+            // Cleared so that picking the same file again still fires a change
+            // event — otherwise the second attempt does nothing at all.
+            event.target.value = '';
+          }}
+        />
+        {items.length === 0 ? (
           <p className="mt-4 text-xs text-[var(--color-muted-foreground)]">
-            Hỗ trợ PDF, Word, Excel, PowerPoint, ảnh, nén, văn bản và mã nguồn.
+            Hỗ trợ PDF, Word, Excel, PowerPoint, ảnh, nén, văn bản và mã nguồn. Tối đa {MAX_FILES} tệp
+            mỗi tài liệu.
           </p>
-        </div>
-      ) : (
-        <Card className="mt-6">
-          <CardContent className="space-y-4 p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate font-medium">{file.name}</p>
-                <p className="text-xs text-[var(--color-muted-foreground)]">
-                  {formatBytes(file.size)}
-                  {upload.totalChunks > 0 ? ` · ${upload.totalChunks} phần` : ''}
-                </p>
+        ) : null}
+      </div>
+
+      {/* --- Queue -------------------------------------------------------- */}
+
+      {notice ? (
+        <p
+          role="status"
+          className="mt-3 flex items-start gap-2 text-sm text-[var(--color-muted-foreground)]"
+        >
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span className="break-words">{notice}</span>
+        </p>
+      ) : null}
+
+      {items.length > 0 ? (
+        <Card className="mt-4">
+          <CardContent className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-semibold">
+                Tệp đã chọn
+                <span className="ml-2 text-sm font-normal text-[var(--color-muted-foreground)]">
+                  {doneCount}/{items.length} · {formatBytes(totalBytes)}
+                </span>
+              </h2>
+              <div className="flex items-center gap-2">
+                {hasUnfinished && !running ? (
+                  <Button size="sm" className="gap-2" onClick={() => void startUploads()}>
+                    <UploadIcon className="h-4 w-4" />
+                    {doneCount > 0 ? 'Tải tiếp' : 'Bắt đầu tải lên'}
+                  </Button>
+                ) : null}
+                {running ? (
+                  <Button variant="outline" size="sm" onClick={() => void cancelAll()}>
+                    Huỷ
+                  </Button>
+                ) : null}
               </div>
-              {upload.status === 'idle' || upload.status === 'error' ? (
-                <Button variant="ghost" size="icon" onClick={() => void cancelUpload()} aria-label="Bỏ tệp">
-                  <X className="h-4 w-4" />
-                </Button>
-              ) : null}
             </div>
 
-            {upload.status === 'uploading' || upload.status === 'assembling' ? (
-              <div>
-                <div className="h-2 overflow-hidden rounded-full bg-[var(--color-muted)]">
-                  <div
-                    className="h-full bg-[var(--color-primary)] transition-all"
-                    style={{ width: `${upload.status === 'assembling' ? 100 : progress}%` }}
-                    role="progressbar"
-                    aria-valuenow={progress}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label="Tiến độ tải lên"
-                  />
-                </div>
-                <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
-                  {upload.status === 'assembling'
-                    ? 'Đang ghép và kiểm tra tệp…'
-                    : `Đã gửi ${upload.completedChunks}/${upload.totalChunks} phần (${progress}%)`}
-                </p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={() => void cancelUpload()}>
-                  Huỷ
-                </Button>
-              </div>
-            ) : upload.status === 'done' ? (
-              <p className="flex items-center gap-2 text-sm text-[var(--color-success)]">
-                <CheckCircle2 className="h-4 w-4" />
-                Tải lên hoàn tất ({formatBytes(upload.completed?.sizeBytes ?? file.size)})
+            <ul className="mt-4 divide-y divide-[var(--color-border)]">
+              {items.map((item, index) => {
+                const { upload } = item;
+                const progress =
+                  upload.totalChunks > 0
+                    ? Math.round((upload.completedChunks / upload.totalChunks) * 100)
+                    : 0;
+                const busy = upload.status === 'uploading' || upload.status === 'assembling';
+
+                return (
+                  <li key={item.key} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start gap-2">
+                        <p className="min-w-0 flex-1 truncate text-sm font-medium">{item.file.name}</p>
+                        {index === 0 ? (
+                          <Badge variant="outline" className="shrink-0">
+                            Tệp chính
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">
+                        {formatBytes(item.file.size)}
+                        {upload.totalChunks > 0 ? ` · ${upload.totalChunks} phần` : ''}
+                      </p>
+
+                      {busy ? (
+                        <div className="mt-2">
+                          <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-muted)]">
+                            <div
+                              className="h-full bg-[var(--color-primary)] transition-all"
+                              style={{
+                                width: `${upload.status === 'assembling' ? 100 : progress}%`,
+                              }}
+                              role="progressbar"
+                              aria-valuenow={progress}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-label={`Tiến độ tải lên ${item.file.name}`}
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                            {upload.status === 'assembling'
+                              ? 'Đang ghép và kiểm tra tệp…'
+                              : `Đã gửi ${upload.completedChunks}/${upload.totalChunks} phần (${progress}%)`}
+                          </p>
+                        </div>
+                      ) : upload.status === 'done' ? (
+                        <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[var(--color-success)]">
+                          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                          <span>
+                            Tải lên hoàn tất ({formatBytes(upload.completed?.sizeBytes ?? item.file.size)})
+                          </span>
+                          {upload.completed ? (
+                            <Badge variant="outline" className="font-normal">
+                              {upload.completed.fileKind}
+                            </Badge>
+                          ) : null}
+                        </p>
+                      ) : upload.status === 'error' ? (
+                        <div className="mt-1.5 space-y-2">
+                          <p
+                            role="alert"
+                            className="flex items-start gap-2 text-xs text-[var(--color-destructive)]"
+                          >
+                            <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                            <span className="break-words">{upload.error}</span>
+                          </p>
+                          {/* Retrying reuses the existing session, so chunks
+                              already accepted are not re-sent. */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            disabled={running}
+                            onClick={() => void retryItem(item)}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            Thử lại
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="mt-1.5 text-xs text-[var(--color-muted-foreground)]">
+                          Chờ tải lên
+                        </p>
+                      )}
+                    </div>
+
+                    {!busy ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={publishing}
+                        onClick={() => void removeItem(item)}
+                        aria-label={`Bỏ tệp ${item.file.name}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+
+            {items.length > 1 ? (
+              <p className="mt-3 text-xs text-[var(--color-muted-foreground)]">
+                Tệp đầu tiên là tệp chính — tệp này được xem trước và tải xuống mặc định.
               </p>
-            ) : upload.status === 'error' ? (
-              <div className="space-y-2">
-                <p role="alert" className="text-sm text-[var(--color-destructive)]">
-                  {upload.error}
-                </p>
-                {/* Retrying reuses the existing session, so chunks already
-                    accepted are not re-sent. */}
-                <Button size="sm" onClick={() => void startUpload()}>
-                  Thử lại
-                </Button>
-              </div>
-            ) : (
-              <Button className="gap-2" onClick={() => void startUpload()}>
-                <UploadIcon className="h-4 w-4" />
-                Bắt đầu tải lên
-              </Button>
-            )}
+            ) : null}
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       {/* --- Metadata ----------------------------------------------------- */}
       <Card className="mt-6">
@@ -451,35 +701,28 @@ export function UploadPage() {
             </span>
           </label>
 
-          {upload.status === 'error' && upload.completed ? (
+          {notice && !running ? (
             <p role="alert" className="text-sm text-[var(--color-destructive)]">
-              {upload.error}
+              {notice}
             </p>
           ) : null}
 
-          <div className="flex items-center gap-3">
-            <Button disabled={!canPublish} onClick={() => void publish()}>
-              Đăng tài liệu
+          <div className="flex flex-wrap items-center gap-3">
+            <Button disabled={!canPublish || publishing} onClick={() => void publish()}>
+              {publishing ? 'Đang đăng…' : 'Đăng tài liệu'}
             </Button>
             {!canPublish ? (
               <span className="text-xs text-[var(--color-muted-foreground)]">
-                {upload.status !== 'done'
-                  ? 'Hoàn tất tải tệp trước.'
-                  : 'Điền tiêu đề, khoa, loại tài liệu và xác nhận bản quyền.'}
+                {items.length === 0
+                  ? 'Chọn ít nhất một tệp.'
+                  : !allDone
+                    ? 'Hoàn tất tải tất cả các tệp trước.'
+                    : 'Điền tiêu đề, khoa, loại tài liệu và xác nhận bản quyền.'}
               </span>
             ) : null}
           </div>
         </CardContent>
       </Card>
-
-      {upload.completed ? (
-        <p className="mt-4 text-xs text-[var(--color-muted-foreground)]">
-          Mã kiểm tra tệp: <code className="font-mono">{upload.completed.contentHash.slice(0, 16)}…</code>
-          <Badge variant="outline" className="ml-2">
-            {upload.completed.fileKind}
-          </Badge>
-        </p>
-      ) : null}
     </div>
   );
 }

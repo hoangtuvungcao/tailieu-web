@@ -4,7 +4,7 @@
 # =============================================================================
 #
 # This tunnel publishes the API on an INTERNAL hostname only:
-#     api-internal.tailieu.5125121.com  ->  http://localhost:4000
+#     api-internal.tailieu.5125121.com  ->  http://localhost:3000
 #
 # The public site (tailieu.5125121.com) is served by Cloudflare Pages, and its
 # Pages Function proxies /api/* to this internal hostname. That indirection is
@@ -36,13 +36,13 @@ ingress:
     # on Windows `localhost` resolves to `::1` first — which an IPv4-only
     # listener refuses. Naming the address removes the ambiguity instead of
     # leaving it to the resolver's ordering.
-    service: http://127.0.0.1:4000
+    service: http://127.0.0.1:3000
     originRequest:
       # Generous timeout: Office conversion on first upload can be slow, and a
       # 524 from Cloudflare mid-conversion is confusing to debug.
       connectTimeout: 30s
       # Never let Cloudflare cache API responses.
-      httpHostHeader: 127.0.0.1:4000
+      httpHostHeader: 127.0.0.1:3000
 
   # Everything else is refused. A catch-all 404 is safer than a default route:
   # a misconfigured ingress must fail closed, not expose the API on a hostname

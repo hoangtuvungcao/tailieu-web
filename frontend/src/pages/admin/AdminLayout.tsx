@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  FileCheck,
   Flag,
   HardDrive,
   Layers,
@@ -28,6 +29,7 @@ const SECTIONS = [
   { to: '/admin', label: 'Tổng quan', icon: LayoutDashboard, end: true, permission: 'analytics.read' },
   { to: '/admin/users', label: 'Người dùng', icon: Users, permission: 'users.read' },
   { to: '/admin/taxonomy', label: 'Danh mục', icon: Layers, permission: 'taxonomy.manage' },
+  { to: '/admin/documents', label: 'Kiểm duyệt tài liệu', icon: FileCheck, permission: 'documents.moderate' },
   { to: '/admin/reports', label: 'Báo cáo', icon: Flag, permission: 'reports.read' },
   { to: '/admin/storage', label: 'Lưu trữ', icon: HardDrive, permission: 'storage.manage' },
   { to: '/admin/audit', label: 'Nhật ký', icon: Activity, permission: 'audit.read' },
@@ -48,7 +50,11 @@ export function AdminLayout() {
   function maySee(permission: string): boolean {
     if (isAdmin) return true;
     if (!isModerator) return false;
-    return permission === 'reports.read';
+    // Both are in the moderator tiers' permission set in
+    // `backend/src/config/permissions.ts`. Leaving the queue out would have
+    // given a moderator a reports screen and no way to approve the documents
+    // the reports are about.
+    return permission === 'reports.read' || permission === 'documents.moderate';
   }
 
   const visible = SECTIONS.filter((section) => maySee(section.permission));

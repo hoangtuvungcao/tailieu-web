@@ -359,17 +359,24 @@ export async function listAuditLogs(filters: repo.AuditFilters, pagination: Pagi
 // --- Storage -----------------------------------------------------------------
 
 export async function getStorageOverview() {
-  const [stats, largest, orphaned, liveBytes] = await Promise.all([
+  const [stats, largest, orphaned, liveBytes, scan] = await Promise.all([
     repo.getPlatformStats(),
     repo.listLargestObjects(20),
     repo.listOrphanedObjects(24, 50),
     repo.totalStoredBytes(),
+    repo.scanStatusCounts(),
   ]);
 
   return {
     ...stats.storage,
     /** Bytes actually referenced by live documents, as opposed to stored. */
     liveBytes,
+    /**
+     * Files by scan state. `pending` is the one to watch: it means a file is
+     * queued or mid-scan and therefore not downloadable, so a number that never
+     * falls means the scanner is not running.
+     */
+    scan,
     largest: largest.map((o) => ({
       objectKey: o.objectKey,
       sizeBytes: Number(o.sizeBytes),

@@ -48,6 +48,13 @@ export function DocumentsPage() {
   // not something you pick, it is where you arrived from, so it shows as a chip
   // you can drop rather than a control you can set.
   const ownerUserId = params.get('ownerUserId') ?? undefined;
+  // Set by a tag badge on a document page. Like `ownerUserId`, it is somewhere
+  // you arrived from rather than something you pick, so it shows as a chip.
+  //
+  // The backend has always accepted `tag`; this page simply never read it, so
+  // every tag on every document was a link to an unfiltered list — it looked
+  // like it had worked and had only shown you everything.
+  const tag = params.get('tag') ?? undefined;
   const sort = params.get('sort') ?? (query ? 'relevance' : 'newest');
   const page = Number(params.get('page') ?? '1');
 
@@ -56,14 +63,26 @@ export function DocumentsPage() {
   const [searchInput, setSearchInput] = useState(query);
   useEffect(() => setSearchInput(query), [query]);
 
-  const filters = { q: query || undefined, facultyId, documentTypeId, fileKind, ownerUserId, sort, page, limit: 20 };
+  const filters = { q: query || undefined, facultyId, documentTypeId, fileKind, ownerUserId, tag, sort, page, limit: 20 };
 
   // Two hooks, one result: the search endpoint when there is a query, the plain
   // list otherwise. They return different shapes (search adds highlights and a
   // score), and keeping them separate avoids pretending a browse is a search
   // with an empty term.
   const listQuery = useDocuments(query ? { ...filters, q: undefined, sort } : filters);
-  const searchQuery = useSearch(query, { facultyId, documentTypeId, fileKind, sort, page, limit: 20 });
+  // Every filter has to be passed on both paths. `ownerUserId` and `tag` were
+  // missing from this call, so typing a search term silently dropped them —
+  // you would search within a tag and get results from the whole library.
+  const searchQuery = useSearch(query, {
+    facultyId,
+    documentTypeId,
+    fileKind,
+    ownerUserId,
+    tag,
+    sort,
+    page,
+    limit: 20,
+  });
 
   const active = query ? searchQuery : listQuery;
   const faculties = useFaculties();
@@ -84,7 +103,7 @@ export function DocumentsPage() {
     updateParam('q', searchInput.trim() || undefined);
   }
 
-  const activeFilterCount = [facultyId, documentTypeId, fileKind, ownerUserId].filter(Boolean).length;
+  const activeFilterCount = [facultyId, documentTypeId, fileKind, ownerUserId, tag].filter(Boolean).length;
 
   const documents = query
     ? (searchQuery.data?.hits.map((hit) => ({
@@ -111,8 +130,8 @@ export function DocumentsPage() {
       {/* Two rows below `sm`. Three controls on one line leaves the input
           about 120px wide at 360px — narrow enough that the placeholder is
           unreadable and typing is guesswork. */}
-      <form onSubmit={submitSearch} role="search" className="space-y-2 sm:space-y-0">
-        <div className="flex gap-2">
+      <form onSubmit={submitSearch} role="search" className="space-y-2 sm:space-y-0 sm:flex sm:gap-2">
+        <div className="flex flex-1 gap-2">
           <div className="relative flex-1">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-muted-foreground)]"
@@ -155,7 +174,7 @@ export function DocumentsPage() {
             variant="outline"
             onClick={() => setShowFilters((open) => !open)}
             aria-expanded={showFilters}
-            className="gap-2"
+            className="gap-2 shrink-0"
           >
             <SlidersHorizontal className="h-4 w-4" />
             Bộ lọc
@@ -221,6 +240,9 @@ export function DocumentsPage() {
               label={FILE_KINDS.find((k) => k.value === fileKind)?.label ?? fileKind}
               onClear={() => updateParam('fileKind', undefined)}
             />
+          ) : null}
+          {tag ? (
+            <FilterChip label={`Thẻ: ${tag}`} onClear={() => updateParam('tag', undefined)} />
           ) : null}
           {ownerUserId ? (
             // No name to show: the profile page is the only thing that knows it,

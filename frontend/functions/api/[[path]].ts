@@ -42,7 +42,7 @@ interface Env {
 }
 
 /** Used when API_ORIGIN is unset, so a misconfigured deploy fails loudly. */
-const FALLBACK_ORIGIN = 'http://localhost:4000';
+const FALLBACK_ORIGIN = 'http://localhost:3000';
 
 /**
  * Request headers that must not be forwarded.

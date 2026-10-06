@@ -113,14 +113,27 @@ export async function createDocument(
     }
 
     // --- Validate the uploads ----------------------------------------------
-    const sessions = await tx
+    const fetched = await tx
       .select()
       .from(uploadSessions)
       .where(inArray(uploadSessions.id, input.uploadIds));
 
-    if (sessions.length !== input.uploadIds.length) {
+    if (fetched.length !== input.uploadIds.length) {
       throw new AppError('UPLOAD_SESSION_NOT_FOUND', 'Một hoặc nhiều phiên tải lên không tồn tại.');
     }
+
+    // Restored to the caller's order, because `WHERE id IN (...)` guarantees
+    // nothing about the order rows come back in — Postgres is free to return
+    // them in whatever sequence the chosen plan produces, and it does.
+    //
+    // Everything below depends on this: `index === 0` decides which file is
+    // primary, `sessions[0]` supplies the document's own kind, and the upload
+    // page tells the user in as many words that the first file they added is
+    // the primary one. Without this line that promise was false, and a
+    // three-file document got whichever file the planner happened to emit
+    // first as its preview and its default download.
+    const byId = new Map(fetched.map((session) => [session.id, session]));
+    const sessions = input.uploadIds.map((id) => byId.get(id)!);
 
     for (const session of sessions) {
       if (session.userId !== actor.actorUserId) {

@@ -312,7 +312,7 @@ foreach ($service in $Services) {
 
 Write-Host "`nDone.`n"
 Write-Host "  Start everything:   Start-Service tailieu-api, tailieu-worker, tailieu-cleanup"
-Write-Host "  Verify the API:     Invoke-RestMethod http://localhost:4000/api/health"
+Write-Host "  Verify the API:     Invoke-RestMethod http://localhost:3000/api/health"
 Write-Host "  Logs:               $InstallRoot\logs\"
 Write-Host ''
 Write-Host '  The .env file is read by the API itself (dotenv), not injected by NSSM,'

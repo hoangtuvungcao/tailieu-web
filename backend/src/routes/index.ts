@@ -4,6 +4,7 @@ import { adminRoutes } from '../modules/admin/admin.route.js';
 import { authRoutes } from '../modules/auth/auth.route.js';
 import { healthRoutes } from '../modules/health/health.route.js';
 import { mediaRoutes } from '../modules/media/media.route.js';
+import { reportRoutes } from '../modules/reports/reports.route.js';
 import { searchRoutes } from '../modules/search/search.route.js';
 import { bookmarkRoutes } from '../modules/social/bookmarks/bookmarks.route.js';
 import { collectionRoutes } from '../modules/social/collections/collections.route.js';
@@ -54,6 +55,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       v1.register(userRoutes, { prefix: '/users' });
       v1.register(leaderboardRoutes, { prefix: '/leaderboards' });
       v1.register(feedRoutes, { prefix: '/feed' });
+      // Filing a report. The moderators' side of the same table is under
+      // /admin/reports — see the note in reports.route.ts for why they are
+      // split.
+      v1.register(reportRoutes, { prefix: '/reports' });
       // Public profile images. Registered under /api/v1/media and referenced by
       // the paths stored in users.avatar_url and users.cover_url — the two must
       // stay in step, which is why `media.paths.ts` owns both directions.

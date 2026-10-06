@@ -1,36 +1,150 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Tài liệu TTN">
-  <!--
-    The mark: a page with a turned corner, carrying a leaf.
-
-    Two ideas, one glyph. The page is the product, a document library. The
-    leaf is the place, Tây Nguyên, the Central Highlands, whose identity is
-    green and growing.
-
-    It is drawn as large flat shapes with no outline and no interior detail
-    beyond the leaf, because the same file is the 16px tab icon. Measured at
-    16px, a thinner page with a paler corner and a midrib collapsed into an
-    indistinct gold smudge; the fold is now gold rather than pale green and
-    the leaf fills the page, so three high-contrast flat areas survive the
-    downsampling.
-
-    Colours are the tokens the stylesheet defines (brand 600, gold 400),
-    converted from OKLCH to hex because an SVG asset cannot resolve a CSS
-    custom property.
-  -->
   <defs>
-    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#005f2e"/>
-      <stop offset="1" stop-color="#007e46"/>
+    <!-- Base Plate Gradients (Emerald Crystal 3D) -->
+    <linearGradient id="emerald-base" x1="0.1" y1="0.05" x2="0.9" y2="0.95">
+      <stop offset="0%" stop-color="#0f5132" />
+      <stop offset="35%" stop-color="#064e3b" />
+      <stop offset="70%" stop-color="#04392b" />
+      <stop offset="100%" stop-color="#022119" />
     </linearGradient>
+
+    <!-- Glass Surface Specular Light -->
+    <radialGradient id="glass-specular" cx="0.25" cy="0.18" r="0.75">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.5" />
+      <stop offset="30%" stop-color="#34d399" stop-opacity="0.15" />
+      <stop offset="70%" stop-color="#059669" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Metallic Gold Chamfer Rim (3D Bevel) -->
+    <linearGradient id="gold-bevel" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#fff8d6" />
+      <stop offset="25%" stop-color="#fbbf24" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="75%" stop-color="#d97706" />
+      <stop offset="100%" stop-color="#78350f" />
+    </linearGradient>
+
+    <!-- Inner Metallic Gold Line -->
+    <linearGradient id="gold-inner" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fef08a" stop-opacity="0.8" />
+      <stop offset="50%" stop-color="#f59e0b" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#b45309" stop-opacity="0.8" />
+    </linearGradient>
+
+    <!-- Open Book 3D Pages Gradient -->
+    <linearGradient id="book-page-left" x1="1" y1="0.5" x2="0" y2="0.5">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="60%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#cbd5e1" />
+    </linearGradient>
+    <linearGradient id="book-page-right" x1="0" y1="0.5" x2="1" y2="0.5">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="60%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#cbd5e1" />
+    </linearGradient>
+    <linearGradient id="book-page-shadow" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#e2e8f0" />
+      <stop offset="100%" stop-color="#94a3b8" />
+    </linearGradient>
+
+    <!-- Central Flame & Leaf Gold Gradient -->
+    <linearGradient id="emblem-gold" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#fffbeb" />
+      <stop offset="20%" stop-color="#fde047" />
+      <stop offset="55%" stop-color="#f59e0b" />
+      <stop offset="85%" stop-color="#d97706" />
+      <stop offset="100%" stop-color="#92400e" />
+    </linearGradient>
+
+    <!-- Forest Emerald Leaf Wing -->
+    <linearGradient id="leaf-emerald" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#6ee7b7" />
+      <stop offset="45%" stop-color="#10b981" />
+      <stop offset="85%" stop-color="#047857" />
+      <stop offset="100%" stop-color="#064e3b" />
+    </linearGradient>
+
+    <!-- Deep Ambient Drop Shadows -->
+    <filter id="shadow-book" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="2.8" stdDeviation="2" flood-color="#01180f" flood-opacity="0.75" />
+    </filter>
+    <filter id="shadow-emblem" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#022119" flood-opacity="0.85" />
+    </filter>
+
+    <clipPath id="squircle-clip">
+      <rect width="64" height="64" rx="16" />
+    </clipPath>
   </defs>
 
-  <rect width="64" height="64" rx="14" fill="url(#badge)"/>
+  <!-- 1. BASE SQUIRCLE WITH 3D GLASS & BEVEL -->
+  <rect width="64" height="64" rx="16" fill="url(#emerald-base)" />
 
-  <!-- The page, with the corner already turned: one path, no fold overlay. -->
-  <path d="M19 10h18l11 11v31a4 4 0 0 1-4 4H19a4 4 0 0 1-4-4V14a4 4 0 0 1 4-4z" fill="#ffffff"/>
-  <path d="M37 10l11 11H40a3 3 0 0 1-3-3z" fill="#e3ae28"/>
+  <!-- Glass Specular Reflection Highlight -->
+  <g clip-path="url(#squircle-clip)">
+    <rect width="64" height="64" fill="url(#glass-specular)" />
+    <!-- Diagonal Glass Glare Arc -->
+    <path d="M-10 28 L40 -12 L56 -12 L6 38 Z" fill="#ffffff" opacity="0.12" />
+  </g>
 
-  <!-- The leaf, with a stem so it does not read as a droplet. -->
-  <path d="M31 23c7 6 8.6 13.6 0 21-8.6-7.4-7-15 0-21z" fill="#e3ae28"/>
-  <path d="M31 44v6" stroke="#e3ae28" stroke-width="2.6" stroke-linecap="round"/>
+  <!-- Outer 3D Gold Metallic Chamfer Rim -->
+  <rect x="1.1" y="1.1" width="61.8" height="61.8" rx="15" fill="none"
+        stroke="url(#gold-bevel)" stroke-width="2.2" />
+
+  <!-- Inner Soft Accent Border -->
+  <rect x="3" y="3" width="58" height="58" rx="13.2" fill="none"
+        stroke="url(#gold-inner)" stroke-width="0.8" opacity="0.7" />
+
+  <!-- 2. CENTRAL 3D OPEN KNOWLEDGE BOOK (ISOMETRIC SPREAD) -->
+  <g filter="url(#shadow-book)">
+    <!-- Lower pages depth edge (Thickness of book) -->
+    <path d="M12 43.5 C19 41.5 26.5 42 32 44.5 C37.5 42 45 41.5 52 43.5 L52 45.2 C45 43.2 37.5 43.7 32 46.2 C26.5 43.7 19 43.2 12 45.2 Z"
+          fill="url(#book-page-shadow)" />
+
+    <!-- Left Open Page -->
+    <path d="M12 42.5 C19 40.2 26.5 40.8 32 43.2 L32 28.5 C26.5 26.5 19 26 12 28 Z"
+          fill="url(#book-page-left)" />
+
+    <!-- Right Open Page -->
+    <path d="M52 42.5 C45 40.2 37.5 40.8 32 43.2 L32 28.5 C37.5 26.5 45 26 52 28 Z"
+          fill="url(#book-page-right)" />
+
+    <!-- Center Fold Spine Glow -->
+    <path d="M31.3 28.2 L32.7 28.2 L32.7 43.5 L31.3 43.5 Z" fill="#10b981" opacity="0.65" />
+    <path d="M32 28.5 L32 43.2" stroke="#047857" stroke-width="0.7" />
+  </g>
+
+  <!-- Fine Document Lines (Subtle Text Lines on Pages) -->
+  <path d="M15 31.5 C19 30.5 24 30.8 28 32 M15 34.5 C19 33.5 24 33.8 28 35 M15 37.5 C19 36.5 24 36.8 28 38"
+        stroke="#94a3b8" stroke-width="0.8" stroke-linecap="round" opacity="0.75" />
+  <path d="M36 32 C40 30.8 45 30.5 49 31.5 M36 35 C40 33.8 45 33.5 49 34.5 M36 38 C40 36.8 45 36.5 49 37.5"
+        stroke="#94a3b8" stroke-width="0.8" stroke-linecap="round" opacity="0.75" />
+
+  <!-- 3. CENTRAL EMBLEM: HIGHLANDS MOUNTAINS & KNOWLEDGE FLAME-LEAF (GOLD 3D) -->
+  <!-- Mountain Silhouette Peak Behind (Tây Nguyên Crest) -->
+  <g filter="url(#shadow-emblem)">
+    <path d="M20 28 L27 18 L32 23.5 L37 16 L44 28"
+          fill="none" stroke="url(#emblem-gold)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M27 18 L29 21 M37 16 L35 20"
+          stroke="#fffbeb" stroke-width="1.2" stroke-linecap="round" />
+
+    <!-- Right Side: Emerald Knowledge Leaf -->
+    <path d="M32 38 C32 38 41 33 42 21 C36 22 33 27 32 31 Z"
+          fill="url(#leaf-emerald)" />
+    <!-- Leaf Spine Highlight -->
+    <path d="M32 38 C35 32 37 27 40 22.5"
+          fill="none" stroke="#a7f3d0" stroke-width="1.1" stroke-linecap="round" />
+
+    <!-- Center & Left Side: Golden Sacred Flame (Ngọn lửa tri thức Đại học Tây Nguyên) -->
+    <path d="M32 38 C31 35 24 31 24 23 C24 18 28 15 30 13.5 C29.5 16 31 18 32.5 19 C34 16.5 33 13 32 10 C36 12 39 16 38 21 C37.5 23 36 24.5 35 26 C37 25 38.5 23 39 21 C39.5 28 34.5 34 32 38 Z"
+          fill="url(#emblem-gold)" />
+
+    <!-- Specular Ridge on Gold Flame -->
+    <path d="M30 14 C31.5 17 33 20 31.5 25 C30.5 28 28 30 26 31"
+          fill="none" stroke="#fffbeb" stroke-width="1.2" stroke-linecap="round" opacity="0.85" />
+
+    <!-- Star Core Sparkle (Đỉnh cao tri thức) -->
+    <circle cx="32" cy="10" r="1.4" fill="#ffffff" />
+    <circle cx="32" cy="10" r="2.8" fill="#fde047" opacity="0.45" />
+  </g>
 </svg>

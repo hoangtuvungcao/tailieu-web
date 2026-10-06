@@ -1,5 +1,6 @@
 import { Flag, HardDrive, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { Badge, Button, Card, CardContent, EmptyState, ErrorState, Input, Skeleton } from '@/components/ui';
 import { ApiError } from '@/lib/api-client';
@@ -11,6 +12,9 @@ import {
   useStorageOverview,
   useUpdateSettings,
 } from '@/lib/admin-hooks';
+// Shared with the dialog a reporter fills in, so the reason a moderator reads
+// is the same sentence the reporter picked.
+import { reportReasonLabel, reportTargetLabel } from '@/lib/report-hooks';
 import { formatBytes, formatRelativeTime } from '@/lib/utils';
 import { AdminPageHeader } from './AdminLayout';
 
@@ -23,39 +27,61 @@ import { AdminPageHeader } from './AdminLayout';
  * because they carry real logic.
  */
 
-const REASON_LABELS: Record<string, string> = {
-  spam: 'Spam',
-  copyright: 'Vi phạm bản quyền',
-  malware: 'Mã độc',
-  wrong_content: 'Nội dung sai',
-  sensitive: 'Nội dung nhạy cảm',
-  harassment: 'Quấy rối',
-  fake_document: 'Tài liệu giả',
-  misleading: 'Thông tin gây nhầm lẫn',
-  other: 'Khác',
+/**
+ * Where a moderator goes to actually look at what was reported.
+ *
+ * `comment` is deliberately absent: a comment has no page of its own, and the
+ * only honest place to read one is the discussion under its parent, which the
+ * payload does not name. So a comment report shows its type and id with no
+ * link, rather than a link that would land on a 404.
+ */
+const TARGET_ROUTES: Record<string, (id: string) => string> = {
+  document: (id) => `/documents/${id}`,
+  post: (id) => `/community/${id}`,
+  user: (id) => `/users/${id}`,
+  collection: (id) => `/collections/${id}`,
 };
+
+const STATUS_FILTERS = [
+  { key: 'pending', label: 'Chờ xử lý', empty: 'Không có báo cáo nào đang chờ.' },
+  { key: 'reviewing', label: 'Đang xem', empty: 'Không có báo cáo nào đang được xem xét.' },
+  { key: 'resolved', label: 'Đã xử lý', empty: 'Chưa xử lý báo cáo nào.' },
+  { key: 'rejected', label: 'Đã bỏ qua', empty: 'Chưa bỏ qua báo cáo nào.' },
+] as const;
 
 // =============================================================================
 // Reports
 // =============================================================================
 
 export function AdminReportsPage() {
-  const [status, setStatus] = useState('pending');
+  const [status, setStatus] = useState<string>('pending');
   const [page, setPage] = useState(1);
   const [note, setNote] = useState<Record<string, string>>({});
+  /** Which card is mid-action, so only its own buttons show a spinner. */
+  const [actingId, setActingId] = useState<string | null>(null);
 
   const query = useAdminReports({ status: status || undefined, page, limit: 25 });
   const resolve = useResolveReport();
   const [error, setError] = useState<string | null>(null);
 
+  const meta = query.data?.meta;
+
   async function act(id: string, next: 'resolved' | 'rejected' | 'reviewing'): Promise<void> {
     setError(null);
+    setActingId(id);
     try {
       await resolve.mutateAsync({ id, status: next, note: note[id] });
+      // Both of these move the report out of the tab being viewed, so the list
+      // is refetched rather than patched: a row that vanished locally would
+      // still be counted in `meta.total`, and the two would disagree.
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Không xử lý được báo cáo.');
+    } finally {
+      setActingId(null);
     }
   }
+
+  const active = STATUS_FILTERS.find((option) => option.key === status);
 
   return (
     <>
@@ -70,13 +96,8 @@ export function AdminReportsPage() {
         </p>
       ) : null}
 
-      <div className="mb-4 flex rounded-md border border-[var(--color-border)] p-0.5">
-        {[
-          { key: 'pending', label: 'Chờ xử lý' },
-          { key: 'reviewing', label: 'Đang xem' },
-          { key: 'resolved', label: 'Đã xử lý' },
-          { key: 'rejected', label: 'Đã bỏ qua' },
-        ].map((option) => (
+      <div className="mb-4 flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] p-0.5">
+        {STATUS_FILTERS.map((option) => (
           <button
             key={option.key}
             type="button"
@@ -108,69 +129,126 @@ export function AdminReportsPage() {
         <EmptyState
           icon={<Flag className="h-8 w-8" />}
           title="Không có báo cáo nào"
-          description="Hàng đợi trống — không có gì cần xử lý."
+          description={active?.empty ?? 'Không có gì cần xử lý.'}
         />
       ) : (
         <div className="space-y-3">
-          {query.data?.reports.map((report) => (
-            <Card key={report.id}>
-              <CardContent className="space-y-3 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <Badge variant="warning">{REASON_LABELS[report.reason] ?? report.reason}</Badge>
-                    <p className="mt-1.5 text-sm">
-                      <span className="font-medium">{report.targetType}</span>{' '}
-                      <code className="text-xs text-[var(--color-muted-foreground)]">
-                        {report.targetId.slice(0, 8)}…
-                      </code>
+          {query.data?.reports.map((report) => {
+            const href = TARGET_ROUTES[report.targetType]?.(report.targetId);
+            const open = report.status === 'pending' || report.status === 'reviewing';
+
+            return (
+              <Card key={report.id}>
+                <CardContent className="space-y-3 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <Badge variant="warning">{reportReasonLabel(report.reason)}</Badge>
+                      <p className="mt-1.5 text-sm">
+                        <span className="font-medium">
+                          {reportTargetLabel(report.targetType)}
+                        </span>{' '}
+                        {href ? (
+                          <Link
+                            to={href}
+                            className="text-[var(--color-primary)] underline-offset-2 hover:underline"
+                          >
+                            Mở để xem
+                          </Link>
+                        ) : (
+                          <code className="text-xs text-[var(--color-muted-foreground)]">
+                            {report.targetId.slice(0, 8)}…
+                          </code>
+                        )}
+                      </p>
+                    </div>
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      {report.reporterName} · {formatRelativeTime(report.createdAt)}
                     </p>
                   </div>
-                  <p className="text-xs text-[var(--color-muted-foreground)]">
-                    {report.reporterName} · {formatRelativeTime(report.createdAt)}
-                  </p>
-                </div>
 
-                {report.details ? (
-                  <p className="rounded-md bg-[var(--color-muted)] px-3 py-2 text-sm">
-                    {report.details}
-                  </p>
-                ) : null}
+                  {report.details ? (
+                    <p className="rounded-md bg-[var(--color-muted)] px-3 py-2 text-sm">
+                      {report.details}
+                    </p>
+                  ) : null}
 
-                {report.status === 'pending' || report.status === 'reviewing' ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Input
-                      value={note[report.id] ?? ''}
-                      onChange={(event) =>
-                        setNote((current) => ({ ...current, [report.id]: event.target.value }))
-                      }
-                      placeholder="Ghi chú xử lý (tuỳ chọn)…"
-                      aria-label="Ghi chú xử lý"
-                      className="min-w-48 flex-1"
-                    />
-                    <Button
-                      size="sm"
-                      isLoading={resolve.isPending}
-                      onClick={() => void act(report.id, 'resolved')}
-                    >
-                      Xử lý
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void act(report.id, 'rejected')}
-                    >
-                      Bỏ qua
-                    </Button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-[var(--color-muted-foreground)]">
-                    {report.status === 'resolved' ? 'Đã xử lý' : 'Đã bỏ qua'}
-                    {report.resolutionNote ? ` — ${report.resolutionNote}` : ''}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                  {open ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Input
+                        value={note[report.id] ?? ''}
+                        onChange={(event) =>
+                          setNote((current) => ({ ...current, [report.id]: event.target.value }))
+                        }
+                        placeholder="Ghi chú xử lý (tuỳ chọn)…"
+                        aria-label="Ghi chú xử lý"
+                        className="min-w-48 flex-1"
+                      />
+                      {/* Without this the "Đang xem" tab could never fill: the
+                          filter existed and nothing ever set the status. */}
+                      {report.status === 'pending' ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          isLoading={actingId === report.id}
+                          onClick={() => void act(report.id, 'reviewing')}
+                        >
+                          Đang xem xét
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        isLoading={actingId === report.id}
+                        onClick={() => void act(report.id, 'resolved')}
+                      >
+                        Xử lý
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        isLoading={actingId === report.id}
+                        onClick={() => void act(report.id, 'rejected')}
+                      >
+                        Bỏ qua
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      {report.status === 'resolved' ? 'Đã xử lý' : 'Đã bỏ qua'}
+                      {report.resolutionNote ? ` — ${report.resolutionNote}` : ''}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+
+          {/* The page held `page` state and rendered no controls, so anything
+              past the first 25 reports was unreachable. */}
+          {meta && meta.totalPages > 1 ? (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Trang {meta.page}/{meta.totalPages} · {meta.total} báo cáo
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  Trước
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= meta.totalPages}
+                  onClick={() => setPage((current) => current + 1)}
+                >
+                  Sau
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </>

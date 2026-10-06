@@ -4,6 +4,7 @@ import {
   BookOpen,
   CalendarDays,
   FileText,
+  Flag,
   FolderOpen,
   Heart,
   MessageSquare,
@@ -15,9 +16,10 @@ import {
   Users,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { FollowButton } from '@/components/FollowButton';
+import { ReportDialog } from '@/components/ReportDialog';
 import { Avatar, Button, Card, CardContent, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
@@ -49,9 +51,11 @@ const BADGE_ICONS: Record<string, typeof Award> = {
 
 export function ProfilePage() {
   const { id } = useParams<{ id: string }>();
-  const { user: me } = useAuth();
+  const navigate = useNavigate();
+  const { user: me, isAuthenticated } = useAuth();
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<'posts' | 'followers' | 'following'>('posts');
+  const [reportOpen, setReportOpen] = useState(false);
 
   const profile = useProfile(id);
   const posts = usePosts({ authorUserId: id, page, limit: 10 });
@@ -237,6 +241,12 @@ export function ProfilePage() {
                       Đã lưu
                     </Button>
                   </Link>
+                  <Link to="/reports">
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Flag className="h-4 w-4" aria-hidden />
+                      Báo cáo của tôi
+                    </Button>
+                  </Link>
                   <Link to="/leaderboards">
                     <Button variant="outline" size="sm" className="gap-2">
                       <Trophy className="h-4 w-4" aria-hidden />
@@ -253,7 +263,24 @@ export function ProfilePage() {
                   ) : null}
                 </div>
               ) : (
-                <FollowButton userId={user.id} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <FollowButton userId={user.id} />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-[var(--color-destructive)]/40 text-[var(--color-destructive)] hover:bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)]"
+                    onClick={() => {
+                      if (!isAuthenticated) {
+                        navigate('/login');
+                      } else {
+                        setReportOpen(true);
+                      }
+                    }}
+                  >
+                    <Flag className="h-4 w-4" />
+                    Báo cáo người dùng
+                  </Button>
+                </div>
               )}
             </div>
 
@@ -435,6 +462,15 @@ export function ProfilePage() {
           </div>
         ) : null}
       </div>
+
+      {reportOpen ? (
+        <ReportDialog
+          targetType="user"
+          targetId={user.id}
+          targetTitle={user.displayName}
+          onClose={() => setReportOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

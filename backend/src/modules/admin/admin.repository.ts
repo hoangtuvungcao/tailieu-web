@@ -578,3 +578,27 @@ export async function totalStoredBytes() {
     .where(isNull(documentFiles.deletedAt));
   return Number(row?.value ?? 0);
 }
+
+/**
+ * How many files sit in each scan state.
+ *
+ * Worth a place on the storage screen because the scan pipeline fails quietly:
+ * a file stuck at `pending` is not an error anywhere, it is simply a document
+ * nobody can download. A `pending` count that stops falling is the only signal
+ * that the scanner is down.
+ *
+ * Returned as a sparse map — a status with no files is absent rather than zero,
+ * so callers must not assume every key exists.
+ */
+export async function scanStatusCounts(): Promise<Record<string, number>> {
+  const rows = await db
+    .select({
+      scanStatus: documentFiles.scanStatus,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(documentFiles)
+    .where(isNull(documentFiles.deletedAt))
+    .groupBy(documentFiles.scanStatus);
+
+  return Object.fromEntries(rows.map((row) => [row.scanStatus, Number(row.count)]));
+}

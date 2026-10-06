@@ -105,7 +105,7 @@ máy đó. Đó là lý do `API_HOST` phải là `127.0.0.1`: hai thiết lập 
 Chuỗi đi của một request:
 
 ```
-trình duyệt → Cloudflare Pages → Pages Function → Tunnel → 127.0.0.1:4000
+trình duyệt → Cloudflare Pages → Pages Function → Tunnel → 127.0.0.1:3000
                                       │
                                       └─ đọc CF-Connecting-IP (Cloudflare edge ghi,
                                          ghi đè giá trị người dùng gửi),

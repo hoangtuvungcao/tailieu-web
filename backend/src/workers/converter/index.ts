@@ -8,7 +8,6 @@ import { closeRedis } from '../../db/redis.js';
 import { documentFiles, storageObjects } from '../../db/schema/index.js';
 import { buildDerivedKey } from '../../lib/files/mime.js';
 import {
-  claimPreviewJob,
   deadLetterPreview,
   markProcessed,
   markProcessing,
@@ -17,15 +16,14 @@ import {
   requeuePreview,
   type PreviewJob,
 } from '../../lib/preview/queue.js';
-import { getStorage } from '../../lib/storage/index.js';
-import { checkConverterAvailable, ConversionError, convertToPdf } from './convert.js';
 import {
-  assertScannerAvailable,
-  handleScanJob,
-  recoverStaleScans,
-  scanningEnabled,
-} from './scan.js';
-import { claimScanJob } from '../../lib/scan/queue.js';
+  drainScanQueueWhenDisabled,
+  recoverStaleScanJobs,
+} from '../../lib/scan/queue.js';
+import { getStorage } from '../../lib/storage/index.js';
+import { claimNextJob } from './claim.js';
+import { checkConverterAvailable, ConversionError, convertToPdf } from './convert.js';
+import { assertScannerAvailable, handleScanJob, scanningEnabled } from './scan.js';
 
 /**
  * Preview conversion worker.
@@ -175,13 +173,22 @@ async function main(): Promise<void> {
   if (scanningEnabled()) {
     try {
       await assertScannerAvailable();
-      const recoveredScans = await recoverStaleScans();
+      const recoveredScans = await recoverStaleScanJobs();
       log('scanner ready', { recovered: recoveredScans });
     } catch (scanError) {
       error('scanner unavailable; refusing to start', {
         detail: (scanError as Error).message,
       });
       process.exit(1);
+    }
+  } else {
+    // Scanning was switched off. Any job still queued was enqueued by the
+    // configuration that just went away, and its file is stuck at `pending` —
+    // visible to nobody, downloadable by nobody. Release them so "scanning is
+    // off" means what it says.
+    const released = await drainScanQueueWhenDisabled();
+    if (released > 0) {
+      log('scanning is off; released queued files as skipped', { count: released });
     }
   }
 
@@ -204,25 +211,13 @@ async function main(): Promise<void> {
   // and risk memory exhaustion. CONVERTER_CONCURRENCY is a documented setting,
   // and the honest answer is that it should stay at 1 on this hardware.
   while (!shuttingDown) {
-    // Scan jobs first. A file that has not been cleared is not downloadable, so
-    // scanning is on the critical path in a way that conversion is not —
-    // a missing preview degrades the experience, a missing scan blocks it.
-    if (scanningEnabled()) {
-      try {
-        const scanJob = await claimScanJob();
-        if (scanJob) {
-          await handleScanJob(scanJob);
-          continue;
-        }
-      } catch (scanError) {
-        error('scan job failed', { detail: (scanError as Error).message });
-      }
-    }
-
-    let job: PreviewJob | null = null;
+    // One blocking pop across both queues; see `claim.ts` for why it is not
+    // two. Scanning runs first inside Redis when both hold work, because a
+    // file that has not been cleared cannot be downloaded at all.
+    let claimed: Awaited<ReturnType<typeof claimNextJob>> = null;
 
     try {
-      job = await claimPreviewJob();
+      claimed = await claimNextJob(scanningEnabled());
     } catch (claimError) {
       // Redis unreachable. Back off rather than spinning — a tight retry loop
       // against a downed Redis is a busy-wait that burns CPU on a laptop.
@@ -233,8 +228,14 @@ async function main(): Promise<void> {
       continue;
     }
 
-    if (!job) continue;
+    if (!claimed) continue;
 
+    if (claimed.kind === 'scan') {
+      await handleScanJob(claimed.job);
+      continue;
+    }
+
+    const job = claimed.job;
     currentJob = job;
     await markProcessing(job);
 

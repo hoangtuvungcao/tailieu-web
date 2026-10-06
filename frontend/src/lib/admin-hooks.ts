@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, apiWithMeta } from './api-client';
+import type { DocumentSummary } from './hooks';
 
 /**
  * Admin data hooks.
@@ -253,6 +254,56 @@ export function useResolveReport() {
   });
 }
 
+// --- Moderation queue --------------------------------------------------------
+
+/**
+ * Documents waiting for a decision.
+ *
+ * The dashboard has always reported how many are stuck in `pending_review`,
+ * and until this existed there was no screen anywhere that could move one. A
+ * number on a dashboard that nobody can act on is worse than no number.
+ *
+ * The list is the ordinary `DocumentSummary`, so a moderator sees the same
+ * title, owner, faculty and type the submitter does.
+ */
+export function useAdminDocuments(filters: {
+  status?: string;
+  facultyId?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery({
+    queryKey: ['admin', 'documents', filters],
+    queryFn: async () => {
+      const { data, meta } = await apiWithMeta<DocumentSummary[]>(
+        `/documents/moderation/queue${qs(filters)}`,
+      );
+      return { documents: data, meta: meta as unknown as PaginatedMeta };
+    },
+  });
+}
+
+export function useModerateDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      id: string;
+      action: 'publish' | 'reject' | 'archive' | 'restore';
+      reason?: string | null;
+    }) =>
+      api.post(`/documents/${input.id}/moderate`, {
+        action: input.action,
+        reason: input.reason || null,
+      }),
+    onSuccess: () => {
+      // Both, because the decision changes the queue the moderator is looking
+      // at and the pending count on the dashboard behind it.
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'documents'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+    },
+  });
+}
+
 // --- Audit -------------------------------------------------------------------
 
 export function useAuditLog(filters: {
@@ -279,6 +330,14 @@ export interface StorageOverview {
   orphaned: number;
   shared: number;
   liveBytes: number;
+  /**
+   * Files by scan state. Sparse — a state with no files is absent entirely, so
+   * every read has to cope with `undefined` rather than assume a zero.
+   *
+   * `pending` is the one that matters operationally: a pending file is not
+   * downloadable, so a count that never falls means the scanner is not running.
+   */
+  scan: Record<string, number>;
   largest: { objectKey: string; sizeBytes: number; mimeType: string; refCount: number }[];
   orphans: { objectKey: string; sizeBytes: number; createdAt: string }[];
 }

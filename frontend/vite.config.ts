@@ -7,7 +7,7 @@ import { defineConfig } from 'vite';
 /**
  * Vite configuration.
  *
- * The dev server proxies `/api` to the backend on :4000. That is not just a
+ * The dev server proxies `/api` to the backend on :3000. That is not just a
  * convenience — it makes local development match production, where the Pages
  * Function also serves the API from the same origin. Developing against a
  * direct cross-origin API would exercise a CORS path that never runs in

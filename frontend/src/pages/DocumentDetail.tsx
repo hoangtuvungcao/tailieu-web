@@ -1,8 +1,12 @@
 import {
   ArrowLeft,
+  Check,
+  Copy,
   Download,
+  ExternalLink,
   Eye,
   FileText,
+  Flag,
   Star,
   Trash2,
   TriangleAlert,
@@ -11,15 +15,20 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { BookmarkButton } from '@/components/BookmarkButton';
+import { LikeButton } from '@/components/LikeButton';
+import { ReportDialog } from '@/components/ReportDialog';
 import { Badge, Button, Card, CardContent, ErrorState, Skeleton, Spinner } from '@/components/ui';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth';
 import { useDeleteDocument, useDocument, useDownloadDocument, useRateDocument } from '@/lib/hooks';
+import type { DocumentFile } from '@/lib/hooks';
+import { useReportState } from '@/lib/report-hooks';
 import { useSeo } from '@/lib/seo';
 import {
   DOCUMENT_STATUS_LABELS,
   FILE_KIND_LABELS,
   VISIBILITY_LABELS,
+  cn,
   formatBytes,
   formatDate,
   formatRelativeTime,
@@ -40,7 +49,7 @@ import {
 export function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
 
   const { data: document, isLoading, isError, error, refetch } = useDocument(id);
   const download = useDownloadDocument();
@@ -50,7 +59,19 @@ export function DocumentDetailPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewReason, setPreviewReason] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [textLoading, setTextLoading] = useState(false);
+  const [textError, setTextError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  /** Null means "whatever the server marked primary". */
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+
+  const isOwner = Boolean(user?.id && document?.owner?.id && user.id === document.owner.id);
+  const canReport = Boolean(document) && !isOwner;
+  const reportState = useReportState('document', id, isAuthenticated && canReport);
 
   // A shared document link is the one URL on this site that people paste into
   // chat, so its preview matters more here than anywhere else: the title, the
@@ -111,27 +132,47 @@ export function DocumentDetailPage() {
 
   const primaryFile = document.files.find((file) => file.isPrimary) ?? document.files[0];
 
-  async function openPreview() {
-    if (!id || !primaryFile) return;
+  // Which file the preview pane and the download button act on. A document may
+  // hold up to ten, and the server marks the first one primary; until the user
+  // picks another row in the sidebar, that is the one on screen.
+  const activeFile = document.files.find((file) => file.id === activeFileId) ?? primaryFile;
+
+  function selectFile(fileId: string) {
+    if (fileId === activeFile?.id) return;
+    setActiveFileId(fileId);
+    setPreviewUrl(null);
+    setPreviewReason(null);
+    setTextContent(null);
+    setTextError(null);
+    setImageError(false);
+  }
+
+  async function openPreview(target: DocumentFile) {
+    if (!id) return;
     setPreviewLoading(true);
+    setPreviewReason(null);
+    setImageError(false);
+    setTextError(null);
     try {
-      // The PREVIEW endpoint, not download.
-      //
-      // The two mint the same token over the same bytes and differ in exactly
-      // one thing: `mode`, which becomes `Content-Disposition`. Download sends
-      // `attachment`, and a browser handed an attachment saves the file instead
-      // of rendering it — so an `<object>` given a download URL displays
-      // nothing. That is what this did, which is why the preview pane stayed
-      // empty for the format the preview pane exists for.
       const result = await api.get<{ url: string | null; reason: string | null }>(
-        `/documents/${id}/preview?fileId=${primaryFile.id}`,
+        `/documents/${id}/preview?fileId=${target.id}`,
       );
       if (result.url) {
         setPreviewUrl(result.url);
+        if (target.fileKind === 'text' || target.fileKind === 'code') {
+          setTextLoading(true);
+          try {
+            const res = await fetch(result.url);
+            if (!res.ok) throw new Error('Không thể tải nội dung văn bản.');
+            const text = await res.text();
+            setTextContent(text);
+          } catch (err) {
+            setTextError(err instanceof Error ? err.message : 'Lỗi tải văn bản');
+          } finally {
+            setTextLoading(false);
+          }
+        }
       } else {
-        // The server knows why there is nothing to show — still converting, or
-        // a format with no viewer. It says so in Vietnamese; repeating that
-        // beats inventing a second explanation here that can drift from it.
         setPreviewReason(result.reason);
       }
     } catch {
@@ -141,7 +182,21 @@ export function DocumentDetailPage() {
     }
   }
 
-  const canPreviewInline = primaryFile && ['pdf', 'image', 'text', 'code'].includes(primaryFile.fileKind);
+  async function copyText() {
+    if (!textContent) return;
+    try {
+      await navigator.clipboard.writeText(textContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  }
+
+  const canPreviewInline =
+    activeFile &&
+    (['pdf', 'image', 'text', 'code'].includes(activeFile.fileKind) ||
+      activeFile.previewStatus === 'ready');
 
   return (
     <div className="container-page py-8">
@@ -205,26 +260,116 @@ export function DocumentDetailPage() {
 
           {/* --- Preview ---------------------------------------------------- */}
           <div className="mt-6">
-            {previewUrl && primaryFile?.fileKind === 'pdf' ? (
+            {previewUrl &&
+            (activeFile?.fileKind === 'pdf' || activeFile?.previewStatus === 'ready') ? (
               <object
                 data={previewUrl}
                 type="application/pdf"
                 className="h-[70vh] w-full rounded-lg border border-[var(--color-border)]"
-                aria-label={`Xem trước ${primaryFile.originalName}`}
+                aria-label={`Xem trước ${activeFile?.originalName}`}
               >
                 <p className="p-4 text-sm">
                   Trình duyệt không hiển thị được PDF trực tiếp.{' '}
-                  <a href={previewUrl} className="text-[var(--color-primary)] underline">
+                  <a
+                    href={previewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[var(--color-primary)] underline"
+                  >
                     Mở trong tab mới
                   </a>
                 </p>
               </object>
-            ) : previewUrl && primaryFile?.fileKind === 'image' ? (
-              <img
-                src={previewUrl}
-                alt={primaryFile.originalName}
-                className="mx-auto max-h-[70vh] rounded-lg border border-[var(--color-border)]"
-              />
+            ) : previewUrl && activeFile?.fileKind === 'image' ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-muted)]/20 p-4">
+                {imageError ? (
+                  <div className="p-6 text-center text-sm text-[var(--color-destructive)]">
+                    Không tải được hình ảnh xem trước.{' '}
+                    <a
+                      href={previewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline font-medium"
+                    >
+                      Mở trực tiếp
+                    </a>
+                  </div>
+                ) : (
+                  <>
+                    <img
+                      src={previewUrl}
+                      alt={activeFile.originalName}
+                      className="mx-auto max-h-[70vh] rounded-lg border border-[var(--color-border)] object-contain shadow-sm"
+                      onError={() => setImageError(true)}
+                    />
+                    <div className="mt-3 flex gap-3 text-xs">
+                      <a
+                        href={previewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Mở ảnh gốc trong tab mới
+                      </a>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : previewUrl &&
+              (activeFile?.fileKind === 'text' || activeFile?.fileKind === 'code') ? (
+              <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-sm">
+                <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-muted)]/40 px-4 py-2.5 text-xs text-[var(--color-muted-foreground)]">
+                  <div className="flex items-center gap-2 font-mono">
+                    <FileText className="h-4 w-4" />
+                    <span className="font-medium text-[var(--color-foreground)]">
+                      {activeFile.originalName}
+                    </span>
+                    {textContent !== null ? (
+                      <span>({textContent.split('\n').length} dòng)</span>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {textContent !== null ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1.5 px-2 text-xs"
+                        onClick={() => void copyText()}
+                      >
+                        {copied ? (
+                          <Check className="h-3.5 w-3.5 text-green-500" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                        {copied ? 'Đã sao chép' : 'Sao chép'}
+                      </Button>
+                    ) : null}
+                    <a
+                      href={previewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Mở raw
+                    </a>
+                  </div>
+                </div>
+                {textLoading ? (
+                  <div className="flex items-center justify-center p-12">
+                    <Spinner className="h-6 w-6" />
+                  </div>
+                ) : textError ? (
+                  <div className="p-8 text-center text-sm text-[var(--color-destructive)]">
+                    {textError}
+                  </div>
+                ) : (
+                  <pre className="max-h-[70vh] overflow-auto p-4 font-mono text-xs sm:text-sm leading-relaxed whitespace-pre-wrap break-words bg-[var(--color-muted)]/10">
+                    {textContent}
+                  </pre>
+                )}
+              </div>
             ) : (
               <Card>
                 <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
@@ -233,13 +378,13 @@ export function DocumentDetailPage() {
                     {previewReason ??
                       (canPreviewInline
                         ? 'Nhấn để xem trước tài liệu ngay trong trình duyệt.'
-                        : primaryFile?.previewStatus === 'queued' ||
-                            primaryFile?.previewStatus === 'processing'
+                        : activeFile?.previewStatus === 'queued' ||
+                            activeFile?.previewStatus === 'processing'
                           ? 'Tài liệu đang được xử lý để xem trước. Bạn có thể tải xuống ngay bây giờ.'
                           : 'Định dạng này cần tải xuống để xem. Vui lòng tải tệp về máy.')}
                   </p>
-                  {canPreviewInline && !previewReason ? (
-                    <Button onClick={() => void openPreview()} isLoading={previewLoading}>
+                  {canPreviewInline && !previewReason && activeFile ? (
+                    <Button onClick={() => void openPreview(activeFile)} isLoading={previewLoading}>
                       Xem trước
                     </Button>
                   ) : null}
@@ -268,33 +413,123 @@ export function DocumentDetailPage() {
         <aside className="min-w-0 space-y-4">
           <Card>
             <CardContent className="space-y-3 p-5">
-              {primaryFile ? (
-                <div className="text-sm">
-                  <p className="truncate font-medium" title={primaryFile.originalName}>
-                    {primaryFile.originalName}
-                  </p>
-                  <p className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">
-                    {FILE_KIND_LABELS[primaryFile.fileKind] ?? primaryFile.fileKind} ·{' '}
-                    {formatBytes(primaryFile.sizeBytes)}
-                  </p>
-                </div>
+              {activeFile ? (
+                document.files.length === 1 ? (
+                  <div className="text-sm">
+                    <p className="truncate font-medium" title={activeFile.originalName}>
+                      {activeFile.originalName}
+                    </p>
+                    <p className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">
+                      {FILE_KIND_LABELS[activeFile.fileKind] ?? activeFile.fileKind} ·{' '}
+                      {formatBytes(activeFile.sizeBytes)}
+                    </p>
+                  </div>
+                ) : (
+                  /* A document may hold several files. Picking a row is what
+                     switches the preview and the main download button, so the
+                     rows are buttons rather than plain text. Each carries its
+                     own download icon as well, for saving one without first
+                     making it the selection. */
+                  <div className="text-sm">
+                    <p className="font-medium">{document.files.length} tệp đính kèm</p>
+                    <ul className="-mx-2 mt-2 space-y-0.5">
+                      {document.files.map((file) => {
+                        const selected = file.id === activeFile.id;
+                        return (
+                          <li key={file.id} className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => selectFile(file.id)}
+                              aria-pressed={selected}
+                              className={cn(
+                                'min-w-0 flex-1 rounded-md px-2 py-1.5 text-left transition-colors',
+                                selected
+                                  ? 'bg-[var(--color-muted)]'
+                                  : 'hover:bg-[var(--color-muted)]',
+                              )}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span
+                                  className="min-w-0 flex-1 truncate text-xs font-medium"
+                                  title={file.originalName}
+                                >
+                                  {file.originalName}
+                                </span>
+                                {file.isPrimary ? (
+                                  <Badge variant="outline" className="shrink-0">
+                                    Chính
+                                  </Badge>
+                                ) : null}
+                              </span>
+                              <span className="mt-0.5 block text-[11px] text-[var(--color-muted-foreground)]">
+                                {FILE_KIND_LABELS[file.fileKind] ?? file.fileKind} ·{' '}
+                                {formatBytes(file.sizeBytes)}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void download.mutateAsync({ documentId: document.id, fileId: file.id })
+                              }
+                              aria-label={`Tải xuống ${file.originalName}`}
+                              className="shrink-0 rounded p-1.5 text-[var(--color-muted-foreground)] transition-colors hover:text-[var(--color-primary)]"
+                            >
+                              <Download className="h-3.5 w-3.5" aria-hidden />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )
               ) : null}
 
               <Button
                 className="w-full gap-2"
-                onClick={() => void download.mutateAsync(document.id)}
+                onClick={() =>
+                  void download.mutateAsync({ documentId: document.id, fileId: activeFile?.id })
+                }
                 isLoading={download.isPending}
-                disabled={!primaryFile}
+                disabled={!activeFile}
               >
                 <Download className="h-4 w-4" />
-                Tải xuống
+                {document.files.length > 1 ? 'Tải tệp đang chọn' : 'Tải xuống'}
               </Button>
 
-              <BookmarkButton
-                target="document"
-                id={document.id}
-                className="w-full justify-center border border-[var(--color-border)]"
-              />
+              <div className="flex gap-2">
+                <BookmarkButton
+                  target="document"
+                  id={document.id}
+                  className="flex-1 justify-center border border-[var(--color-border)]"
+                />
+                <LikeButton
+                  documentId={document.id}
+                  className="flex-1 justify-center border border-[var(--color-border)]"
+                />
+              </div>
+
+              {isOwner ? (
+                <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] px-3 py-2 text-center text-xs text-[var(--color-muted-foreground)]">
+                  Đây là tài liệu do bạn đăng tải
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full gap-2 border-[var(--color-destructive)]/30 text-[var(--color-destructive)] hover:bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)]"
+                  disabled={reportState.data?.reported}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      navigate('/login');
+                    } else {
+                      setReportOpen(true);
+                    }
+                  }}
+                >
+                  <Flag className="h-4 w-4" />
+                  {reportState.data?.reported ? 'Đã báo cáo vi phạm' : 'Báo cáo tài liệu vi phạm'}
+                </Button>
+              )}
 
               {download.isError ? (
                 <p role="alert" className="text-xs text-[var(--color-destructive)]">
@@ -415,8 +650,18 @@ export function DocumentDetailPage() {
               </CardContent>
             </Card>
           ) : null}
+
         </aside>
       </div>
+
+      {reportOpen && document ? (
+        <ReportDialog
+          targetType="document"
+          targetId={document.id}
+          targetTitle={document.title}
+          onClose={() => setReportOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -43,6 +43,47 @@ redis.on('connect', () => {
   console.info('[redis] connected');
 });
 
+/**
+ * A second connection for blocking commands, with no `commandTimeout`.
+ *
+ * The client above sets a 2s command timeout so a slow Redis cannot stall an
+ * HTTP request. That is right for the API and wrong for a queue consumer: a
+ * blocking pop is *supposed* to sit idle, and ioredis applies `commandTimeout`
+ * to blocking commands like any other. With both settings on one client,
+ * `BRPOP key 5` was aborted at 2000ms with "Command timed out" — every single
+ * time the queue was empty, which is nearly always. The worker logged an error
+ * every eight seconds and converted nothing. It only ever looked healthy when
+ * jobs were already waiting, because then the pop returns immediately.
+ *
+ * Blocking pops therefore need their own connection. This is the standard
+ * arrangement (BullMQ and friends do the same) rather than a workaround: the
+ * two clients have genuinely different latency contracts, and one socket cannot
+ * honour both.
+ *
+ * Note the two clients share a Redis database, not state — `redis` and
+ * `redisBlocking` see the same keys.
+ */
+export const redisBlocking = new Redis(env.REDIS_URL, {
+  connectTimeout: 5_000,
+  // No commandTimeout. Blocking pops are bounded by their own timeout argument
+  // and by CONVERT_TIMEOUT_MS/CLAMAV_TIMEOUT_MS upstream, so an unbounded
+  // command here cannot hang a consumer forever.
+  //
+  // `null` rather than a count: when the connection drops mid-BRPOP, queuing
+  // the command for retry is what we want. A finite limit would surface as a
+  // spurious job-claim failure on every network blip.
+  maxRetriesPerRequest: null,
+  enableOfflineQueue: true,
+  lazyConnect: false,
+  retryStrategy(times) {
+    return Math.min(times * 200, 5_000);
+  },
+});
+
+redisBlocking.on('error', (error: Error) => {
+  console.error('[redis:blocking] error:', error.message);
+});
+
 /** Namespaced key builders — keeps ad-hoc string keys out of call sites. */
 export const cacheKeys = {
   /** Effective permission set for a user. Invalidated on any role mutation. */
@@ -79,5 +120,9 @@ export async function permissionCacheVersion(): Promise<string> {
 }
 
 export async function closeRedis(): Promise<void> {
+  // `disconnect()` rather than `quit()` for the blocking client: a consumer
+  // parked in BRPOP will not answer a QUIT until its timeout expires, so the
+  // graceful path would stall shutdown for as long as the pop timeout.
+  redisBlocking.disconnect();
   await redis.quit().catch(() => redis.disconnect());
 }

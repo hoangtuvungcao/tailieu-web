@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowUp,
   FileText,
+  Flag,
   Folder,
   Globe,
   Lock,
@@ -11,7 +12,9 @@ import {
   X,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+
+import { ReportDialog } from '@/components/ReportDialog';
 
 import {
   Badge,
@@ -72,8 +75,10 @@ const TARGET_ROUTES: Record<CollectionItem['target']['type'], string> = {
 
 export function CollectionDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [page, setPage] = useState(1);
+  const [reportOpen, setReportOpen] = useState(false);
   const query = useCollection(id, page);
 
   if (query.isLoading) {
@@ -137,7 +142,25 @@ export function CollectionDetailPage() {
               <p className="mt-3 text-sm">{collection.description}</p>
             ) : null}
           </div>
-          {collection.permissions.canEdit ? <OwnerActions collection={collection} /> : null}
+          {collection.permissions.canEdit ? (
+            <OwnerActions collection={collection} />
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs text-[var(--color-destructive)] border-[var(--color-destructive)]/30 hover:bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)]"
+              onClick={() => {
+                if (!isAuthenticated) {
+                  navigate('/login');
+                } else {
+                  setReportOpen(true);
+                }
+              }}
+            >
+              <Flag className="h-4 w-4" />
+              Báo cáo bộ sưu tập
+            </Button>
+          )}
         </div>
 
         {collection.permissions.canAddItem ? <AddItemForm collectionId={collection.id} /> : null}
@@ -204,6 +227,15 @@ export function CollectionDetailPage() {
             </Link>{' '}
             để tạo bộ sưu tập của riêng bạn.
           </p>
+        ) : null}
+
+        {reportOpen ? (
+          <ReportDialog
+            targetType="collection"
+            targetId={collection.id}
+            targetTitle={collection.title}
+            onClose={() => setReportOpen(false)}
+          />
         ) : null}
       </div>
     </div>

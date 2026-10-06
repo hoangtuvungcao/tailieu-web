@@ -19,6 +19,17 @@ const QUEUE_KEY = 'preview:queue';
 const PROCESSING_KEY = 'preview:processing';
 const DEAD_LETTER_KEY = 'preview:dead';
 
+/**
+ * Exposed so a consumer can block on several queues at once.
+ *
+ * The worker serves this queue and the scan queue from one loop, and a single
+ * multi-key `BRPOP` wakes on whichever fills first — which is both lower
+ * latency and cheaper than polling each in turn. That requires the key name to
+ * be visible outside this module, so it is exported deliberately rather than
+ * reconstructed at the call site.
+ */
+export const PREVIEW_QUEUE_KEY = QUEUE_KEY;
+
 export interface PreviewJob {
   /** `document_files.id` — the specific file to convert. */
   fileId: string;
@@ -63,21 +74,15 @@ export async function deadLetterPreview(job: PreviewJob, reason: string): Promis
 }
 
 /**
- * Take the next job, blocking briefly if the queue is empty.
+ * Decode a popped payload.
  *
- * `BRPOP` returns the value directly, so the payload is decoded from the
- * colon-separated header list rather than from a dedicated API.
+ * A malformed payload is unprocessable; dropping it is better than crashing the
+ * worker and wedging the whole queue behind one bad entry.
  */
-export async function claimPreviewJob(timeoutSeconds = 5): Promise<PreviewJob | null> {
-  const result = await redis.brpop(QUEUE_KEY, timeoutSeconds);
-  if (!result) return null;
-
-  const [, payload] = result;
+export function decodePreviewJob(payload: string): PreviewJob | null {
   try {
     return JSON.parse(payload) as PreviewJob;
   } catch {
-    // A malformed payload is unprocessable; dropping it is better than
-    // crashing the worker and wedging the whole queue behind one bad entry.
     console.error('[converter] discarding unparseable job payload');
     return null;
   }

@@ -8,7 +8,7 @@
  */
 import { onRequest } from '../functions/api/[[path]]';
 
-const ORIGIN = 'http://localhost:4000';
+const ORIGIN = 'http://localhost:3000';
 
 async function call(path: string, init: RequestInit = {}) {
   const request = new Request(`https://tailieu.5125121.com${path}`, init);

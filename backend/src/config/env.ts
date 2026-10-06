@@ -99,7 +99,7 @@ export function isDefaultSeedPassword(password: string): boolean {
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    API_PORT: intFromEnv(4000, 1),
+    API_PORT: intFromEnv(3000, 1),
     /**
      * Interface to listen on. Loopback by default, deliberately.
      *
@@ -114,7 +114,7 @@ const envSchema = z
      * Set to 0.0.0.0 only for a deliberate, firewalled setup.
      */
     API_HOST: z.string().min(1).default('127.0.0.1'),
-    API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
+    API_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
     /**
      * Whether Fastify should trust `X-Forwarded-For` from the tunnel.

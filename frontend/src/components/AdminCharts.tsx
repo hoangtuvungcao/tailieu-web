@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { cn, formatBytes } from '@/lib/utils';
 
@@ -35,7 +35,8 @@ export function StatTile({
 }: {
   label: string;
   value: string | number;
-  hint?: string;
+  /** Usually a sentence; a node when the number it explains is actionable. */
+  hint?: React.ReactNode;
   tone?: 'neutral' | 'good' | 'warning' | 'critical';
   icon?: React.ReactNode;
 }) {
@@ -103,6 +104,13 @@ export function LineChart({
   const gradientId = useId();
   const [hover, setHover] = useState<number | null>(null);
 
+  // Tooltip placement needs two measurements CSS cannot make for itself: how
+  // wide the tooltip came out, and how wide the card is. See below.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const [containerPx, setContainerPx] = useState(0);
+  const [tipLeft, setTipLeft] = useState<number | null>(null);
+
   if (data.length === 0) {
     return (
       <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-[var(--color-border)]">
@@ -141,8 +149,47 @@ export function LineChart({
 
   const hovered = hover === null ? null : data[hover];
 
+  // Track the card's width, so the clamp below stays correct when the window
+  // or the admin sidebar changes size. A chart drawn with `w-full` has no
+  // fixed pixel width to reason about.
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    setContainerPx(wrap.clientWidth);
+    const observer = new ResizeObserver(() => setContainerPx(wrap.clientWidth));
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, []);
+
+  /**
+   * Anchor the tooltip to its point, then keep it inside the card.
+   *
+   * Centring it on the point is not enough on its own. An absolutely
+   * positioned box shrinks to fit whatever room is left between its anchor and
+   * the edge, so a point near the right edge left the tooltip a few pixels
+   * wide — and `2026-10-06` then honoured the hyphens as break opportunities
+   * and wrapped to one character per line, drawing a tall white sliver over
+   * the plot. Measured and clamped, the same tooltip sits wholly inside the
+   * card at any width, which is what `whitespace-nowrap` alone would not
+   * achieve: that stops the wrapping but lets the box hang off the edge.
+   */
+  useLayoutEffect(() => {
+    const tip = tipRef.current;
+    if (!tip || hover === null || containerPx === 0) {
+      setTipLeft(null);
+      return;
+    }
+    const half = tip.offsetWidth / 2;
+    const anchor = (x(hover) / width) * containerPx;
+    // The outer Math.max keeps the box centred, rather than pinned left, in the
+    // degenerate case of a tooltip wider than the card.
+    setTipLeft(Math.min(Math.max(anchor, half), Math.max(containerPx - half, half)));
+    // `x` is derived from these two numbers and nothing else.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hover, containerPx, stepX]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapRef}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="w-full"
@@ -266,13 +313,18 @@ export function LineChart({
       </svg>
 
       {/* The tooltip is HTML, not SVG text: it gets real typography and cannot
-          be clipped by the viewBox. */}
+          be clipped by the viewBox. `whitespace-nowrap` is load-bearing rather
+          than cosmetic — see the placement effect above. */}
       {hovered ? (
         <div
-          className="pointer-events-none absolute -translate-x-1/2 rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2.5 py-1.5 text-xs shadow-md"
+          ref={tipRef}
+          className="pointer-events-none absolute top-0 -translate-x-1/2 w-max whitespace-nowrap rounded-md border border-[var(--color-border)] bg-[var(--color-card)] px-2.5 py-1.5 text-xs shadow-md"
           style={{
-            left: `${(x(hover!) / width) * 100}%`,
-            top: 0,
+            left: tipLeft ?? 0,
+            // Hidden for the one frame before the measurement lands. The effect
+            // is a layout effect, so this is never actually painted; it is here
+            // so a tooltip can never appear at the left edge if it ever is.
+            visibility: tipLeft === null ? 'hidden' : undefined,
           }}
         >
           <p className="font-medium tabular-nums">{formatValue(hovered.value)}</p>

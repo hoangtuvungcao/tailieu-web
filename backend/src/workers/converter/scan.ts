@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import { env } from '../../config/env.js';
 import { db } from '../../db/client.js';
@@ -9,7 +9,6 @@ import {
   deadLetterScan,
   markScanProcessed,
   markScanProcessing,
-  recoverStaleScanJobs,
   requeueScan,
   type ScanJob,
 } from '../../lib/scan/queue.js';
@@ -52,10 +51,6 @@ export async function assertScannerAvailable(): Promise<void> {
         'upload stuck as pending forever.',
     );
   }
-}
-
-export async function recoverStaleScans(): Promise<number> {
-  return recoverStaleScanJobs();
 }
 
 export async function processScanJob(job: ScanJob): Promise<void> {
@@ -196,24 +191,11 @@ export async function handleScanJob(job: ScanJob): Promise<void> {
   }
 }
 
-/** Mark files as scanned-by-choice when scanning is switched off. */
-export async function markScanSkipped(fileId: string): Promise<void> {
-  await db
-    .update(documentFiles)
-    .set({ scanStatus: 'skipped' })
-    .where(eq(documentFiles.id, fileId));
-}
-
-/** Counters for the admin storage screen. */
-export async function scanStatusCounts(): Promise<Record<string, number>> {
-  const { rows } = await db.execute<{ scan_status: string; count: string }>(sql`
-    SELECT scan_status, count(*)::text AS count
-      FROM document_files
-     WHERE deleted_at IS NULL
-     GROUP BY scan_status
-  `);
-  return Object.fromEntries(rows.map((r) => [r.scan_status, Number(r.count)]));
-}
+// `recoverStaleScans` and `markScanSkipped` used to live here and are gone.
+// The first only re-exported `recoverStaleScanJobs`, which the worker imports
+// directly; the second is superseded by the batched
+// `drainScanQueueWhenDisabled` in the queue module, which also restores
+// `status = 'ready'` — without that, "skipped" would still mean undownloadable.
 
 // Re-exported so the worker entry point has a single import for scan concerns.
 export { markScanProcessing, markScanProcessed };

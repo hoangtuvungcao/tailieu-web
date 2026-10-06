@@ -1,5 +1,6 @@
 import { FileText, Flag, HardDrive, Upload, Users } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { LineChart, StatTile } from '@/components/AdminCharts';
 import { Card, CardContent, ErrorState, Skeleton } from '@/components/ui';
@@ -108,7 +109,20 @@ export function AdminDashboardPage() {
           tone={
             data.moderation.openReports + data.moderation.pendingDocuments > 0 ? 'warning' : 'good'
           }
-          hint={`${data.moderation.openReports} báo cáo · ${data.moderation.pendingDocuments} chờ duyệt`}
+          // Both numbers link to the queue that can clear them. A count of work
+          // waiting with no way to reach the work is a notification the reader
+          // has to go and satisfy by hand.
+          hint={
+            <>
+              <Link to="/admin/reports" className="hover:underline">
+                {data.moderation.openReports} báo cáo
+              </Link>
+              {' · '}
+              <Link to="/admin/documents" className="hover:underline">
+                {data.moderation.pendingDocuments} chờ duyệt
+              </Link>
+            </>
+          }
         />
       </div>
 

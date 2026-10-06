@@ -44,7 +44,7 @@ api-internal.tailieu.5125121.com
     │
 cloudflared.exe  (service: tailieu-tunnel)
     │
-localhost:4000
+localhost:3000
     │
 node.exe  (service: tailieu-api)
     │
@@ -266,17 +266,17 @@ Start-Service tailieu-cleanup
 
 ```powershell
 # API sống chưa
-Invoke-RestMethod http://localhost:4000/api/health
+Invoke-RestMethod http://localhost:3000/api/health
 
 # Phải trả về JSON có đủ 7 khoa
-Invoke-RestMethod http://localhost:4000/api/v1/taxonomy/faculties | Select-Object -ExpandProperty data | Measure-Object
+Invoke-RestMethod http://localhost:3000/api/v1/taxonomy/faculties | Select-Object -ExpandProperty data | Measure-Object
 
 # Tìm kiếm tiếng Việt không dấu (kiểm tra trigger bỏ dấu)
-Invoke-RestMethod 'http://localhost:4000/api/v1/search/suggest?q=cong' | Select-Object -ExpandProperty data
+Invoke-RestMethod 'http://localhost:3000/api/v1/search/suggest?q=cong' | Select-Object -ExpandProperty data
 
 # Đăng nhập
 $body = @{ email = 'admin@tailieu.local'; password = '<mật-khẩu-đã-đổi>' } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://localhost:4000/api/v1/auth/login -Body $body -ContentType 'application/json'
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/v1/auth/login -Body $body -ContentType 'application/json'
 ```
 
 Qua tunnel:
@@ -310,7 +310,7 @@ Làm tối thiểu những việc sau.
 
 ### Tường lửa
 
-Chỉ mở những cổng cần thiết. **Không** mở 4000, 5432, 6379, 8333 ra ngoài —
+Chỉ mở những cổng cần thiết. **Không** mở 3000, 5432, 6379, 8333 ra ngoài —
 tunnel kết nối đi ra, nên không cần mở cổng nào cho lưu lượng vào.
 
 ```powershell

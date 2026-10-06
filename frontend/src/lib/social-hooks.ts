@@ -139,6 +139,43 @@ export function useSetLike() {
   });
 }
 
+/**
+ * A document's like state for the signed-in viewer.
+ *
+ * Separate from the post path because a post arrives inside a feed page that
+ * already knows who is reading, and carries `likedByViewer` inline. A document
+ * is fetched one at a time and its payload has the count (`stats.likes`) but
+ * not whether *you* are in it, so the viewer's own state has to be asked for.
+ *
+ * The endpoint answers `{ liked: false, likeCount: 0 }` to a signed-out caller,
+ * so this is safe to run before the session is known — the button just renders
+ * unpressed and disabled.
+ */
+export function useDocumentLikeState(id: string | undefined) {
+  return useQuery({
+    queryKey: ['social', 'likes', 'document', id],
+    queryFn: () => api.get<{ liked: boolean; likeCount: number }>(`/likes/document/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useSetDocumentLike() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { documentId: string; liked: boolean }) =>
+      api.put<{ liked: boolean; likeCount: number }>(`/likes/document/${input.documentId}`, {
+        liked: input.liked,
+      }),
+    onSuccess: (result, input) => {
+      // The response is the new truth, so it goes straight into the cache
+      // rather than being refetched — and the document itself is invalidated
+      // because `stats.likes` is rendered from it.
+      queryClient.setQueryData(['social', 'likes', 'document', input.documentId], result);
+      void queryClient.invalidateQueries({ queryKey: ['document', input.documentId] });
+    },
+  });
+}
+
 export function usePost(postId: string | undefined) {
   const settled = useSessionSettled();
   return useQuery({

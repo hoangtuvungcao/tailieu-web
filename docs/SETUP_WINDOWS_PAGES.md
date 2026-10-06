@@ -53,7 +53,7 @@ Cloudflare Pages                       (hostname NỘI BỘ, không quảng bá)
                             ┌──────────────────┘
                             │   ← máy chủ trường, KHÔNG mở cổng nào vào
                             ▼
-                   127.0.0.1:4000
+                   127.0.0.1:3000
                    node.exe  (service: tailieu-api)
                             │
         ┌───────────┬───────┴────────┬──────────────┐
@@ -246,7 +246,7 @@ notepad .env
 
 ```bash
 NODE_ENV=production
-API_PORT=4000
+API_PORT=3000
 API_HOST=127.0.0.1                       # ⬅ loopback, xem giải thích bên dưới
 API_PUBLIC_URL=https://tailieu.5125121.com
 LOG_LEVEL=info
@@ -383,15 +383,15 @@ tunnel: <UUID-thật>
 credentials-file: C:\tailieu\cloudflared\<UUID-thật>.json
 ```
 
-Phần `ingress` giữ nguyên — nó đã đúng, và đã trỏ tới `127.0.0.1:4000`:
+Phần `ingress` giữ nguyên — nó đã đúng, và đã trỏ tới `127.0.0.1:3000`:
 
 ```yaml
 ingress:
   - hostname: api-internal.tailieu.5125121.com
-    service: http://127.0.0.1:4000
+    service: http://127.0.0.1:3000
     originRequest:
       connectTimeout: 30s
-      httpHostHeader: 127.0.0.1:4000
+      httpHostHeader: 127.0.0.1:3000
   - service: http_status:404
 ```
 
@@ -462,7 +462,7 @@ Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Bloc
 New-NetFirewallRule -DisplayName 'RDP' -Direction Inbound -Protocol TCP -LocalPort 3389 -Action Allow
 ```
 
-> **Không mở 4000, 5432, 6379, 8333 — và không mở 80/443.** Tunnel kết nối **đi
+> **Không mở 3000, 5432, 6379, 8333 — và không mở 80/443.** Tunnel kết nối **đi
 > ra**, nên không cần một cổng vào nào. Đó là toàn bộ lợi ích của tunnel. Nếu ai đó
 > bảo bạn mở 443 để Cloudflare vào được, người đó đang mô tả một kiến trúc khác.
 
@@ -527,15 +527,15 @@ lỗi thì biết ngay nó ở đoạn nào.
 
 ```powershell
 # Lớp 1 — API sống, tại chỗ
-Invoke-RestMethod http://127.0.0.1:4000/api/health
+Invoke-RestMethod http://127.0.0.1:3000/api/health
 # → {"success":true,"data":{"status":"ok",...}}
 
 # Lớp 2 — dữ liệu thật đã vào
-$f = Invoke-RestMethod http://127.0.0.1:4000/api/v1/taxonomy/faculties
+$f = Invoke-RestMethod http://127.0.0.1:3000/api/v1/taxonomy/faculties
 $f.data.Count                     # → 7
 
 # Tìm kiếm tiếng Việt không dấu — chứng minh unaccent + pg_trgm hoạt động
-(Invoke-RestMethod 'http://127.0.0.1:4000/api/v1/search/suggest?q=cong').data
+(Invoke-RestMethod 'http://127.0.0.1:3000/api/v1/search/suggest?q=cong').data
 
 # Lớp 3 — qua tunnel (hostname nội bộ)
 Invoke-RestMethod https://api-internal.tailieu.5125121.com/api/health
@@ -602,7 +602,7 @@ trong cùng mạng, trỏ tới địa chỉ LAN của máy chủ:
 
 ```powershell
 # Trên MÁY KHÁC. Phải bị TỪ CHỐI KẾT NỐI.
-Invoke-RestMethod http://<địa-chỉ-LAN-của-máy-chủ>:4000/api/health
+Invoke-RestMethod http://<địa-chỉ-LAN-của-máy-chủ>:3000/api/health
 ```
 
 Kết nối bị từ chối nghĩa là `API_HOST` đúng. Nếu nó trả về JSON, API đang lắng

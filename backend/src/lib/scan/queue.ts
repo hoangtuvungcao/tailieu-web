@@ -1,4 +1,8 @@
+import { and, eq, inArray } from 'drizzle-orm';
+
+import { db } from '../../db/client.js';
 import { redis } from '../../db/redis.js';
+import { documentFiles } from '../../db/schema/index.js';
 
 /**
  * Virus scan queue.
@@ -13,6 +17,9 @@ import { redis } from '../../db/redis.js';
 const QUEUE_KEY = 'scan:queue';
 const PROCESSING_KEY = 'scan:processing';
 const DEAD_LETTER_KEY = 'scan:dead';
+
+/** Exposed so the worker can block on this and the preview queue at once. */
+export const SCAN_QUEUE_KEY = QUEUE_KEY;
 
 export interface ScanJob {
   fileId: string;
@@ -47,28 +54,52 @@ export async function deadLetterScan(job: ScanJob, reason: string): Promise<void
   await redis.ltrim(DEAD_LETTER_KEY, 0, 499);
 }
 
-export async function claimScanJob(): Promise<ScanJob | null> {
-  // RPOP, not BRPOP.
-  //
-  // The Redis client sets `commandTimeout: 2000` so a slow cache read
-  // cannot stall a request. A blocking pop with a timeout longer than
-  // that is killed by the command timeout first — so an IDLE worker
-  // logged 'Command timed out' every two seconds and processed nothing.
-  // It only ever appeared to work when jobs were already waiting, because
-  // a blocking pop returns immediately on a non-empty list.
-  //
-  // Polling once a second costs nothing and removes the coupling.
-  const payload = await redis.rpop(QUEUE_KEY);
-  if (!payload) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    return null;
-  }
+/**
+ * Decode a popped payload.
+ *
+ * A malformed payload is unprocessable; dropping it is better than crashing the
+ * worker and wedging the whole queue behind one bad entry.
+ */
+export function decodeScanJob(payload: string): ScanJob | null {
   try {
     return JSON.parse(payload) as ScanJob;
   } catch {
     console.error('[scan] discarding unparseable job payload');
     return null;
   }
+}
+
+/**
+ * Files whose scan never happened because the scanner was switched off.
+ *
+ * A job can only be enqueued while scanning is on, so anything still sitting in
+ * the queue when it is turned off was queued by a configuration that no longer
+ * applies. Those files are stuck: their row says `pending`, and `pending` is
+ * not downloadable, so they would stay invisible to every reader forever with
+ * nothing reporting a problem.
+ *
+ * Draining them is the operator's stated intent made true — the same intent the
+ * upload path already honours when it writes `ready` at attach time. Only
+ * `pending` rows move; a file that failed a scan keeps its failed verdict
+ * rather than being quietly resurrected.
+ */
+export async function drainScanQueueWhenDisabled(): Promise<number> {
+  const payloads = await redis.lrange(QUEUE_KEY, 0, -1);
+  if (payloads.length === 0) return 0;
+
+  const fileIds = payloads
+    .map((payload) => decodeScanJob(payload)?.fileId)
+    .filter((id): id is string => Boolean(id));
+
+  if (fileIds.length > 0) {
+    await db
+      .update(documentFiles)
+      .set({ status: 'ready', scanStatus: 'skipped' })
+      .where(and(inArray(documentFiles.id, fileIds), eq(documentFiles.status, 'pending')));
+  }
+
+  await redis.del(QUEUE_KEY);
+  return fileIds.length;
 }
 
 export async function markScanProcessing(job: ScanJob): Promise<void> {
