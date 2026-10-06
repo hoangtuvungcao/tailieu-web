@@ -157,7 +157,7 @@ const envSchema = z
     REFRESH_GRACE_MS: intFromEnv(10_000, 0),
 
     // CORS / cookies
-    CORS_ORIGINS: csvOrigins(['http://localhost:5173']),
+    CORS_ORIGINS: csvOrigins(['http://localhost:5173', 'https://tailieu-ttn.pages.dev']),
     COOKIE_DOMAIN: z.string().optional().default(''),
 
     // Uploads

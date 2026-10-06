@@ -31,7 +31,7 @@ originRequest:
 
 ingress:
   # Internal API hostname only. Reachable via Cloudflare, not by IP.
-  - hostname: api-internal.tailieu.5125121.com
+  - hostname: tailieu.5125121.com
     # `127.0.0.1`, not `localhost`. The API binds to loopback (API_HOST), and
     # on Windows `localhost` resolves to `::1` first — which an IPv4-only
     # listener refuses. Naming the address removes the ambiguity instead of

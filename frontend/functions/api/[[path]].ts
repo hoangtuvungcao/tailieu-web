@@ -32,11 +32,8 @@
 interface Env {
   /**
    * Origin of the backend as reachable from Cloudflare — the tunnel hostname,
-   * e.g. https://api-internal.tailieu.5125121.com. Set in the Pages project's
+   * e.g. https://tailieu.5125121.com. Set in the Pages project's
    * environment variables for both production and preview.
-   *
-   * It is NOT the public site origin. Pointing this at tailieu.5125121.com
-   * would make the Worker call itself in a loop.
    */
   API_ORIGIN?: string;
 }

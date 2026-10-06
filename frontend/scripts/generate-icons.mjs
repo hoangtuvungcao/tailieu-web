@@ -258,9 +258,9 @@ const OG_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 
 
     <!-- Website link badge -->
     <g transform="translate(0, 255)">
-      <rect x="0" y="0" width="280" height="42" rx="12" fill="#022119" stroke="#34d399" stroke-width="1.2" opacity="0.85" />
+      <rect x="0" y="0" width="300" height="42" rx="12" fill="#022119" stroke="#34d399" stroke-width="1.2" opacity="0.85" />
       <text x="24" y="27" fill="#6ee7b7" font-family="monospace" font-size="18" font-weight="700">
-        tailieu.5125121.com
+        tailieu-ttn.pages.dev
       </text>
     </g>
   </g>
