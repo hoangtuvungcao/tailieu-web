@@ -189,10 +189,28 @@ export function ProfilePage() {
 
           <CardContent className="p-6 pt-0">
             <div className="flex flex-wrap items-end justify-between gap-4">
+              {/*
+                `relative` here is load-bearing, and it is not about the ring.
+
+                The negative top margin pulls the avatar's upper half over the
+                cover — but the cover is a `position: relative` box, and a
+                positioned element paints in the positioned-descendants layer,
+                above static in-flow content whatever the document order. While
+                this avatar stayed `static`, the cover painted straight over the
+                half that overlapped it: a half disc with the initial sliced
+                horizontally through the middle.
+
+                Positioned, the avatar joins the same layer as the cover, and
+                being later in the document it paints on top. Removing the
+                cover's `relative` would also fix it today, but that would leave
+                the overlap depending on the cover never gaining a positioned
+                child — as it has in `ProfileSettings`, whose cover carries the
+                busy overlay.
+              */}
               <Avatar
                 name={user.displayName}
                 src={user.avatarUrl}
-                className="-mt-12 h-24 w-24 text-2xl ring-4 ring-[var(--color-card)] sm:-mt-14 sm:h-28 sm:w-28"
+                className="relative -mt-12 h-24 w-24 text-2xl ring-4 ring-[var(--color-card)] sm:-mt-14 sm:h-28 sm:w-28"
               />
 
               {isOwnProfile ? (
