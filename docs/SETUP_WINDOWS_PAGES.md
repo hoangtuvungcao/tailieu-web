@@ -194,7 +194,7 @@ New-Item -ItemType Directory -Force C:\tailieu\seaweedfs | Out-Null
 
 # 3. Service
 & C:\tools\nssm\nssm.exe install tailieu-storage C:\tailieu\bin\weed.exe
-& C:\tools\nssm\nssm.exe set tailieu-storage AppParameters "server -dir=C:\tailieu\seaweedfs\data -s3 -s3.port=8333 -s3.config=C:\tailieu\seaweedfs\s3.json"
+& C:\tools\nssm\nssm.exe set tailieu-storage AppParameters "server -dir=C:\tailieu\seaweedfs\data -s3 -s3.port=8333 -s3.config=C:\tailieu\seaweedfs\s3.json -master.volumeSizeLimitMB=1024 -volume.max=100"
 & C:\tools\nssm\nssm.exe set tailieu-storage AppStdout C:\tailieu\logs\seaweedfs.log
 & C:\tools\nssm\nssm.exe set tailieu-storage AppStderr C:\tailieu\logs\seaweedfs.error.log
 Start-Service tailieu-storage
