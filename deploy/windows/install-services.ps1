@@ -96,6 +96,15 @@ if ($null -ne $postgresService) {
     $postgresDependency = @($postgresService.Name)
 }
 
+$redisService = Get-Service -Name @('Redis*', 'Memurai*') -ErrorAction SilentlyContinue |
+    Sort-Object Name |
+    Select-Object -First 1
+
+$redisDependency = @()
+if ($null -ne $redisService) {
+    $redisDependency = @($redisService.Name)
+}
+
 $Services = @(
     @{
         Name        = 'tailieu-api'
@@ -104,7 +113,7 @@ $Services = @(
         Command     = $null   # filled in after Node is located
         Args        = 'dist/server.js'
         Directory   = "$InstallRoot\backend"
-        DependsOn   = $postgresDependency + @('Memurai')
+        DependsOn   = $postgresDependency + $redisDependency
     },
     @{
         Name        = 'tailieu-worker'
@@ -113,7 +122,7 @@ $Services = @(
         Command     = $null
         Args        = 'node_modules\.bin\tsx.cmd src/workers/converter/index.ts'
         Directory   = "$InstallRoot\backend"
-        DependsOn   = @('Memurai')
+        DependsOn   = $redisDependency
     },
     @{
         Name        = 'tailieu-cleanup'
@@ -202,7 +211,7 @@ if (Test-FileExists $soffice) {
 # These are installed by their own installers; the script only verifies.
 foreach ($dependency in @(
     @{ Name = 'PostgreSQL'; Service = 'postgresql*'; Hint = 'PostgreSQL 14 for Windows' },
-    @{ Name = 'Redis-compatible store'; Service = 'Memurai'; Hint = 'Memurai (Redis has no official Windows build)' },
+    @{ Name = 'Redis-compatible store'; Service = @('Redis*', 'Memurai*'); Hint = 'Redis or Memurai' },
     @{ Name = 'Object storage'; Service = $null; Hint = 'SeaweedFS weed.exe' }
 )) {
     if ($dependency.Service) {
