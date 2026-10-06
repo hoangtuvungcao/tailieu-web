@@ -265,20 +265,43 @@ export function DocumentDetailPage() {
               <object
                 data={previewUrl}
                 type="application/pdf"
-                className="h-[70vh] w-full rounded-lg border border-[var(--color-border)]"
+                className="h-[70vh] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]"
                 aria-label={`Xem trước ${activeFile?.originalName}`}
               >
-                <p className="p-4 text-sm">
-                  Trình duyệt không hiển thị được PDF trực tiếp.{' '}
-                  <a
-                    href={previewUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[var(--color-primary)] underline"
-                  >
-                    Mở trong tab mới
-                  </a>
-                </p>
+                <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center bg-[var(--color-muted)]/10">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-red-600 mb-3 shadow-xs">
+                    <FileText className="h-7 w-7" aria-hidden />
+                  </div>
+                  <h3 className="text-base font-semibold text-[var(--color-foreground)] max-w-md truncate">
+                    {activeFile?.originalName ?? 'Tài liệu PDF'}
+                  </h3>
+                  <p className="mt-1.5 max-w-sm text-sm text-[var(--color-foreground-muted)]">
+                    Trình duyệt không hỗ trợ xem trực tiếp PDF trong khung nhúng trên thiết bị này.
+                  </p>
+                  <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+                    <a
+                      href={previewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white shadow-xs hover:opacity-90 transition-opacity"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Mở trong tab mới
+                    </a>
+                    {activeFile ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => void download.mutateAsync({ documentId: document.id, fileId: activeFile.id })}
+                        isLoading={download.isPending}
+                      >
+                        <Download className="h-4 w-4" />
+                        Tải tệp về máy
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
               </object>
             ) : previewUrl && activeFile?.fileKind === 'image' ? (
               <div className="flex flex-col items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-muted)]/20 p-4">
