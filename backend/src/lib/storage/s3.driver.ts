@@ -61,6 +61,10 @@ export class S3StorageDriver implements StorageDriver {
       // Large parts over a home connection benefit from retrying rather than
       // failing the whole upload.
       maxAttempts: 3,
+      // S3-compatible stores like SeaweedFS do not support aws-chunked streaming
+      // checksum trailers, which otherwise inflate files by appending chunk frames.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
   }
 
