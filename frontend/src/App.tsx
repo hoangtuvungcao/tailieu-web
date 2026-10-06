@@ -299,7 +299,17 @@ function Header() {
                 user.roles.includes('faculty_moderator') ? (
                   // Only roles that can actually reach at least one admin
                   // screen. Showing it to a student would be a link to a wall.
-                  <Link to="/admin" aria-label="Trang quản trị" className="hidden sm:block">
+                  //
+                  // Hidden again at `lg`, where the desktop nav appears and the
+                  // row has no room left: the badge is 74px with its gap and the
+                  // overflow is 32px, so a signed-in administrator was the one
+                  // account that scrolled the whole page sideways at exactly
+                  // 1024px. A student and a signed-out visitor both fitted,
+                  // which is why this only ever showed up on an admin login.
+                  // It returns at `xl`, where the container's 1280px cap means
+                  // the extra width is real. Nothing is lost in the gap: the
+                  // profile page carries a "Trang quản trị" button.
+                  <Link to="/admin" aria-label="Trang quản trị" className="hidden sm:block lg:hidden xl:block">
                     <Badge variant="gold">Quản trị</Badge>
                   </Link>
                 ) : null}
