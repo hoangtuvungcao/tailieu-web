@@ -1,6 +1,6 @@
 ALTER TABLE "leaderboard_running_totals" DROP CONSTRAINT "leaderboard_running_totals_pk";--> statement-breakpoint
 ALTER TABLE "leaderboard_running_totals" ADD COLUMN "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL;--> statement-breakpoint
-ALTER TABLE "leaderboard_running_totals" ADD CONSTRAINT "leaderboard_running_totals_uq" UNIQUE NULLS NOT DISTINCT("period_type","period_key","scope_type","scope_id","user_id");--> statement-breakpoint
+ALTER TABLE "leaderboard_running_totals" ADD CONSTRAINT "leaderboard_running_totals_uq" UNIQUE("period_type","period_key","scope_type","scope_id","user_id");--> statement-breakpoint
 -- Hand-added, and it has to be here rather than in the generated lines above.
 --
 -- A primary key column is implicitly NOT NULL, and dropping the constraint does

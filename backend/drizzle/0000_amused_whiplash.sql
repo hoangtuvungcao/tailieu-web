@@ -258,7 +258,7 @@ CREATE TABLE "user_roles" (
 	"granted_by" uuid,
 	"expires_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "user_roles_unique_grant_uq" UNIQUE NULLS NOT DISTINCT("user_id","role_id","faculty_id")
+	CONSTRAINT "user_roles_unique_grant_uq" UNIQUE("user_id","role_id","faculty_id")
 );
 --> statement-breakpoint
 CREATE TABLE "document_files" (

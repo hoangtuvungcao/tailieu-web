@@ -192,7 +192,7 @@ CREATE TABLE "leaderboard_snapshots" (
 	"metric" text DEFAULT 'reputation' NOT NULL,
 	"computed_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"is_final" boolean DEFAULT false NOT NULL,
-	CONSTRAINT "leaderboard_snapshots_uq" UNIQUE NULLS NOT DISTINCT("scope_type","scope_id","period_type","period_key","metric")
+	CONSTRAINT "leaderboard_snapshots_uq" UNIQUE("scope_type","scope_id","period_type","period_key","metric")
 );
 --> statement-breakpoint
 CREATE TABLE "notifications" (
