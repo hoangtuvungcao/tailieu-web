@@ -282,15 +282,24 @@ export class S3StorageDriver implements StorageDriver {
     body: Readable;
     expectedBytes?: number;
   }): Promise<CompletedPart> {
-    // Count bytes as they pass so a truncated or oversized part is caught here
-    // rather than producing a silently corrupt assembled file.
-    let bytes = 0;
-    const counting = new Transform({
-      transform(chunk, _encoding, callback) {
-        bytes += chunk.length;
-        callback(null, chunk);
-      },
-    });
+    // Read the chunk into a buffer. At ~8MB per chunk, buffering in memory
+    // is fast, cheap, and guarantees standard Content-Length HTTP PUT without
+    // any AWS SDK aws-chunked streaming trailers or retry stream errors.
+    const chunks: Buffer[] = [];
+    try {
+      for await (const chunk of options.body) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer));
+      }
+    } finally {
+      options.body.destroy();
+    }
+    const buffer = Buffer.concat(chunks);
+
+    if (options.expectedBytes !== undefined && buffer.length !== options.expectedBytes) {
+      throw new Error(
+        `Chunk ${options.partNumber} was declared as ${options.expectedBytes} bytes but ${buffer.length} arrived.`,
+      );
+    }
 
     try {
       const response = await this.client.send(
@@ -299,28 +308,19 @@ export class S3StorageDriver implements StorageDriver {
           Key: options.key,
           UploadId: options.uploadId,
           PartNumber: options.partNumber,
-          Body: options.body.pipe(counting),
-          // Signals a non-seekable stream so the SDK does not attempt to
-          // compute a Content-Length by buffering.
-          ContentLength: options.expectedBytes,
+          Body: buffer,
+          ContentLength: buffer.length,
         }),
       );
-
-      if (options.expectedBytes !== undefined && bytes !== options.expectedBytes) {
-        throw new Error(
-          `Chunk ${options.partNumber} was declared as ${options.expectedBytes} bytes but ${bytes} arrived.`,
-        );
-      }
 
       if (!response.ETag) {
         throw new Error(`Storage backend returned no ETag for chunk ${options.partNumber}.`);
       }
 
       return { partNumber: options.partNumber, etag: response.ETag };
-    } finally {
-      // Ensure the source stream is released even on the error path, otherwise
-      // the request socket stays open until the client gives up.
-      options.body.destroy();
+    } catch (error) {
+      console.error(`[storage] uploadPart ${options.partNumber} failed:`, error);
+      throw error;
     }
   }
 
