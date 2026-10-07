@@ -26,6 +26,7 @@ import { getStorage } from '../../lib/storage/index.js';
 import { findPendingConversionFiles } from '../../modules/documents/documents.repository.js';
 import { claimNextJob } from './claim.js';
 import { checkConverterAvailable, ConversionError, convertToPdf } from './convert.js';
+import { isRasterizerAvailable, rasterizePdfToImages } from '../../lib/preview/rasterizer.js';
 import { assertScannerAvailable, handleScanJob, scanningEnabled } from './scan.js';
 
 /**
@@ -133,6 +134,51 @@ async function processJob(job: PreviewJob): Promise<void> {
       })
       .where(eq(documentFiles.id, job.fileId));
   });
+
+  // Rasterize pages to lightweight ~40KB JPEGs if rasterizer is available
+  if (await isRasterizerAvailable()) {
+    try {
+      const pages = await rasterizePdfToImages(buffer, 30);
+      if (pages.length > 0) {
+        for (const page of pages) {
+          const pageKey = buildDerivedKey(job.objectKey, `page${page.pageNum}`, 'jpg');
+          const pageUpload = await storage.putStream({
+            bucket: env.S3_BUCKET,
+            key: pageKey,
+            body: Readable.from([page.buffer]),
+            contentType: 'image/jpeg',
+            metadata: { derivedFrom: job.fileId, pageNum: String(page.pageNum) },
+          });
+          const pageContentHash = Buffer.from(pageUpload.contentHash, 'hex');
+          await db
+            .insert(storageObjects)
+            .values({
+              contentHash: pageContentHash,
+              bucket: env.S3_BUCKET,
+              objectKey: pageKey,
+              sizeBytes: pageUpload.sizeBytes,
+              detectedMime: 'image/jpeg',
+              refCount: 0,
+            })
+            .onConflictDoNothing({ target: storageObjects.contentHash })
+            .catch(() => undefined);
+        }
+
+        await db
+          .update(documentFiles)
+          .set({ pageCount: pages.length })
+          .where(eq(documentFiles.id, job.fileId));
+
+        await db
+          .update(documents)
+          .set({ pageCount: pages.length })
+          .where(eq(documents.id, job.documentId))
+          .catch(() => undefined);
+      }
+    } catch (rasterErr) {
+      log('rasterization-failed', { fileId: job.fileId, error: String(rasterErr) });
+    }
+  }
 
   log('converted', {
     fileId: job.fileId,

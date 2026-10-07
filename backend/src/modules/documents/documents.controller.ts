@@ -203,6 +203,40 @@ export async function streamContent(request: FastifyRequest, reply: FastifyReply
   });
 }
 
+export async function streamPageImage(request: FastifyRequest, reply: FastifyReply) {
+  const params = request.params as { id?: string; fileId?: string; pageNum?: string };
+  const query = request.query as { token?: string };
+
+  const documentId = params.id ?? '';
+  const fileId = params.fileId ?? '';
+  const pageNum = parseInt(params.pageNum ?? '1', 10);
+
+  if (isNaN(pageNum) || pageNum < 1 || pageNum > 200) {
+    throw new AppError('VALIDATION_FAILED', 'Trang không hợp lệ.');
+  }
+
+  if (!query.token) {
+    throw new AppError('MEDIA_TOKEN_INVALID', 'Liên kết xem tệp không hợp lệ.');
+  }
+
+  const claims = await verifyMediaToken(query.token);
+  if (claims.documentId !== documentId || claims.fileId !== fileId) {
+    throw new AppError('MEDIA_TOKEN_INVALID', 'Liên kết xem tệp không hợp lệ.');
+  }
+
+  const target = await service.resolvePageImageTarget(documentId, fileId, pageNum);
+
+  return streamObject(request, reply, {
+    location: { bucket: target.bucket, key: target.key },
+    contentType: 'image/jpeg',
+    disposition: {
+      kind: 'inline',
+      filename: `page-${pageNum}.jpg`,
+    },
+    cacheControl: 'public, max-age=86400, immutable',
+  });
+}
+
 export async function rateDocument(request: FastifyRequest, reply: FastifyReply) {
   const actor = await requireActor(request);
   const { id } = parseParams(documentIdParamSchema, request.params);

@@ -1,17 +1,18 @@
 import { eq, inArray } from 'drizzle-orm';
 
 import { db } from '../../db/client.js';
-import { documentFiles, documentTypes, uploadSessions } from '../../db/schema/index.js';
+import { documentFiles, documentTypes, storageObjects, uploadSessions } from '../../db/schema/index.js';
 import { recordAudit } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { paginate, type PaginationInput } from '../../lib/pagination.js';
 import { enqueuePreview } from '../../lib/preview/queue.js';
 import { convertFileDirectly } from '../../lib/preview/direct-converter.js';
+import { isRasterizerAvailable } from '../../lib/preview/rasterizer.js';
 import { MEDIA_TOKEN_TTL_SECONDS, signMediaToken } from '../../lib/media-token.js';
 import { enqueueScan } from '../../lib/scan/queue.js';
 import { scanningEnabled } from '../../workers/converter/scan.js';
 import { needsConversion, resolvePreview, type PreviewDescriptor } from '../../lib/preview/preview.resolver.js';
-import { refineContainerMime } from '../../lib/files/mime.js';
+import { buildDerivedKey, refineContainerMime } from '../../lib/files/mime.js';
 import { getStorage } from '../../lib/storage/index.js';
 import { env } from '../../config/env.js';
 import { contentDisposition } from '../../lib/http/content-disposition.js';
@@ -625,6 +626,8 @@ export interface PreviewResponse extends PreviewDescriptor {
   /** Why a preview is unavailable, when it is — shown verbatim to the user. */
   reason: string | null;
   originalName: string;
+  totalPages?: number | null;
+  pages?: string[];
 }
 
 /**
@@ -828,10 +831,33 @@ export async function getPreview(
       };
     }
 
-    // The same content route serves the artifact; it resolves the artifact
-    // from the file row rather than trusting the caller to name an object.
+    // Auto-rasterize pages if not done yet
+    let pageCount = file.pageCount;
+    if ((!pageCount || pageCount === 0) && (await isRasterizerAvailable())) {
+      await convertFileDirectly(file.id).catch(() => undefined);
+      const [refreshed] = await db
+        .select({ pageCount: documentFiles.pageCount })
+        .from(documentFiles)
+        .where(eq(documentFiles.id, file.id));
+      if (refreshed?.pageCount) {
+        pageCount = refreshed.pageCount;
+      }
+    }
+
     const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
-    return { ...base, url, expiresInSeconds, reason: null };
+
+    let pages: string[] | undefined;
+    if (pageCount && pageCount > 0) {
+      const token = await signMediaToken({ documentId, fileId: file.id });
+      pages = [];
+      for (let p = 1; p <= pageCount; p++) {
+        pages.push(
+          `/api/v1/documents/${documentId}/files/${file.id}/pages/${p}?token=${encodeURIComponent(token)}`,
+        );
+      }
+    }
+
+    return { ...base, url, expiresInSeconds, reason: null, totalPages: pageCount, pages };
   }
 
   // --- Natively renderable -------------------------------------------------
@@ -849,8 +875,35 @@ export async function getPreview(
     };
   }
 
+  // For native PDF files, also check if rasterized page images are available or can be generated
+  let pageCount = file.pageCount;
+  if (descriptor.kind === 'pdf') {
+    if ((!pageCount || pageCount === 0) && (await isRasterizerAvailable())) {
+      await convertFileDirectly(file.id).catch(() => undefined);
+      const [refreshed] = await db
+        .select({ pageCount: documentFiles.pageCount })
+        .from(documentFiles)
+        .where(eq(documentFiles.id, file.id));
+      if (refreshed?.pageCount) {
+        pageCount = refreshed.pageCount;
+      }
+    }
+  }
+
   const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
-  return { ...base, url, expiresInSeconds, reason: null };
+
+  let pages: string[] | undefined;
+  if (pageCount && pageCount > 0) {
+    const token = await signMediaToken({ documentId, fileId: file.id });
+    pages = [];
+    for (let p = 1; p <= pageCount; p++) {
+      pages.push(
+        `/api/v1/documents/${documentId}/files/${file.id}/pages/${p}?token=${encodeURIComponent(token)}`,
+      );
+    }
+  }
+
+  return { ...base, url, expiresInSeconds, reason: null, totalPages: pageCount, pages };
 }
 
 // =============================================================================
@@ -929,6 +982,38 @@ export async function resolveContentTarget(
     key: file.objectKey,
     contentType: file.detectedMime,
     filename: file.originalName,
+  };
+}
+
+export async function resolvePageImageTarget(
+  documentId: string,
+  fileId: string,
+  pageNum: number,
+): Promise<{ bucket: string; key: string }> {
+  const files = await repo.findDocumentFiles(documentId);
+  const file = files.find((f) => f.id === fileId);
+
+  if (!file) {
+    throw new AppError('FILE_NOT_FOUND', 'Không tìm thấy tệp.');
+  }
+
+  if (file.status !== 'ready') {
+    throw new AppError('FILE_NOT_FOUND', 'Tệp chưa sẵn sàng.');
+  }
+
+  const pageKey = buildDerivedKey(file.objectKey, `page${pageNum}`, 'jpg');
+  const storage = getStorage();
+  const exists = await storage
+    .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: pageKey })
+    .catch(() => false);
+
+  if (!exists) {
+    throw new AppError('FILE_NOT_FOUND', 'Trang tài liệu chưa sẵn sàng hoặc không tồn tại.');
+  }
+
+  return {
+    bucket: file.bucket || env.S3_BUCKET,
+    key: pageKey,
   };
 }
 

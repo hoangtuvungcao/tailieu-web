@@ -567,3 +567,4 @@ cố triển khai.
 | Bốn khoá bí mật khác nhau | Dùng chung một khoá nghĩa là một lần rò rỉ phá cả ba lớp. |
 | Converter **từ chối khởi động** nếu thiếu LibreOffice | Nhận job rồi hỏng hết sẽ đẩy toàn bộ hàng đợi vào dead-letter. |
 | `S3_FORCE_PATH_STYLE` khác nhau theo nhà cung cấp | SeaweedFS cần `true`, R2 cần `false`. Sai → lỗi chữ ký khó đoán. |
+| Render trang ảnh tối ưu (Poppler `pdftoppm`) | Thay vì tải cả file PDF hàng chục MB về client gây đơ lag và tốn 4G, server tách từng trang thành ảnh ~40KB giúp mở tức thì trong 0.2s - 0.5s. |

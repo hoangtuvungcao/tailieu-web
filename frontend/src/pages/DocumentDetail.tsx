@@ -11,11 +11,13 @@ import {
   Trash2,
   TriangleAlert,
   Volume2,
+  Zap,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { BookmarkButton } from '@/components/BookmarkButton';
+import { DocumentPageViewer } from '@/components/DocumentPageViewer';
 import { LikeButton } from '@/components/LikeButton';
 import { PdfViewer } from '@/components/PdfViewer';
 import { ReportDialog } from '@/components/ReportDialog';
@@ -59,6 +61,9 @@ export function DocumentDetailPage() {
   const remove = useDeleteDocument();
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewPages, setPreviewPages] = useState<string[] | null>(null);
+  const [previewTotalPages, setPreviewTotalPages] = useState<number | null>(null);
+  const [usePdfFallback, setUsePdfFallback] = useState<boolean>(false);
   const [previewReason, setPreviewReason] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [textContent, setTextContent] = useState<string | null>(null);
@@ -127,6 +132,9 @@ export function DocumentDetailPage() {
     if (fileId === activeFile?.id) return;
     setActiveFileId(fileId);
     setPreviewUrl(null);
+    setPreviewPages(null);
+    setPreviewTotalPages(null);
+    setUsePdfFallback(false);
     setPreviewReason(null);
     setTextContent(null);
     setTextError(null);
@@ -147,11 +155,21 @@ export function DocumentDetailPage() {
       setImageError(false);
       setTextError(null);
       try {
-        const result = await api.get<{ url: string | null; reason: string | null }>(
-          `/documents/${id}/preview?fileId=${target.id}${force ? '&retry=1' : ''}`,
-        );
+        const result = await api.get<{
+          url: string | null;
+          reason: string | null;
+          totalPages?: number | null;
+          pages?: string[];
+        }>(`/documents/${id}/preview?fileId=${target.id}${force ? '&retry=1' : ''}`);
         if (result.url) {
           setPreviewUrl(result.url);
+          if (result.pages && result.pages.length > 0) {
+            setPreviewPages(result.pages);
+            setPreviewTotalPages(result.totalPages ?? result.pages.length);
+          } else {
+            setPreviewPages(null);
+            setPreviewTotalPages(null);
+          }
           if (target.fileKind === 'text' || target.fileKind === 'code') {
             setTextLoading(true);
             try {
@@ -352,62 +370,73 @@ export function DocumentDetailPage() {
                   activeFile?.previewStatus === 'ready' ||
                   !['image', 'text', 'code', 'audio', 'video'].includes(activeFile?.fileKind ?? '')),
             ) ? (
-              <div className="space-y-3">
-                {!isMobileDevice && (
+              previewPages && previewPages.length > 0 && !usePdfFallback ? (
+                <DocumentPageViewer
+                  pages={previewPages}
+                  totalPages={previewTotalPages ?? previewPages.length}
+                  fileName={activeFile?.originalName}
+                  pdfUrl={previewUrl}
+                  onSwitchToPdf={() => setUsePdfFallback(true)}
+                  onDownload={() => {
+                    if (activeFile) {
+                      void download.mutateAsync({
+                        documentId: document.id,
+                        fileId: activeFile.id,
+                      });
+                    }
+                  }}
+                  isDownloading={download.isPending}
+                />
+              ) : (
+                <div className="space-y-3">
                   <div className="flex items-center justify-between text-xs text-[var(--color-foreground-muted)] px-1">
-                    <span className="font-medium text-[var(--color-foreground)]">
-                      Bản xem trước: {activeFile?.originalName}
-                    </span>
-                    <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setViewerMode('native')}
-                        className={cn(
-                          'rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer',
-                          viewerMode === 'native'
-                            ? 'bg-[var(--color-card)] text-[var(--color-foreground)] shadow-xs'
-                            : 'text-[var(--color-foreground-muted)] hover:text-[var(--color-foreground)]',
-                        )}
-                      >
-                        Khung nhúng gốc
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setViewerMode('inApp')}
-                        className={cn(
-                          'rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer',
-                          viewerMode === 'inApp'
-                            ? 'bg-[var(--color-card)] text-[var(--color-foreground)] shadow-xs'
-                            : 'text-[var(--color-foreground-muted)] hover:text-[var(--color-foreground)]',
-                        )}
-                      >
-                        Trình đọc web
-                      </button>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-[var(--color-foreground)]">
+                        Bản xem trước PDF: {activeFile?.originalName}
+                      </span>
+                      {previewPages && previewPages.length > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setUsePdfFallback(false)}
+                          className="h-6 gap-1 px-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium cursor-pointer"
+                        >
+                          <Zap className="h-3 w-3 fill-current" />
+                          Chuyển sang xem siêu tốc (~40KB)
+                        </Button>
+                      )}
                     </div>
+                    {!isMobileDevice && (
+                      <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setViewerMode('native')}
+                          className={cn(
+                            'rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer',
+                            viewerMode === 'native'
+                              ? 'bg-[var(--color-card)] text-[var(--color-foreground)] shadow-xs'
+                              : 'text-[var(--color-foreground-muted)] hover:text-[var(--color-foreground)]',
+                          )}
+                        >
+                          Khung nhúng gốc
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setViewerMode('inApp')}
+                          className={cn(
+                            'rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer',
+                            viewerMode === 'inApp'
+                              ? 'bg-[var(--color-card)] text-[var(--color-foreground)] shadow-xs'
+                              : 'text-[var(--color-foreground-muted)] hover:text-[var(--color-foreground)]',
+                          )}
+                        >
+                          Trình đọc web
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {isMobileDevice || viewerMode === 'inApp' ? (
-                  <PdfViewer
-                    url={previewUrl!}
-                    fileName={activeFile?.originalName}
-                    onDownload={() => {
-                      if (activeFile) {
-                        void download.mutateAsync({
-                          documentId: document.id,
-                          fileId: activeFile.id,
-                        });
-                      }
-                    }}
-                    isDownloading={download.isPending}
-                  />
-                ) : (
-                  <object
-                    data={previewUrl!}
-                    type="application/pdf"
-                    className="h-[75vh] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xs"
-                    aria-label={`Xem trước ${activeFile?.originalName}`}
-                  >
+                  {isMobileDevice || viewerMode === 'inApp' ? (
                     <PdfViewer
                       url={previewUrl!}
                       fileName={activeFile?.originalName}
@@ -421,9 +450,30 @@ export function DocumentDetailPage() {
                       }}
                       isDownloading={download.isPending}
                     />
-                  </object>
-                )}
-              </div>
+                  ) : (
+                    <object
+                      data={previewUrl!}
+                      type="application/pdf"
+                      className="h-[75vh] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xs"
+                      aria-label={`Xem trước ${activeFile?.originalName}`}
+                    >
+                      <PdfViewer
+                        url={previewUrl!}
+                        fileName={activeFile?.originalName}
+                        onDownload={() => {
+                          if (activeFile) {
+                            void download.mutateAsync({
+                              documentId: document.id,
+                              fileId: activeFile.id,
+                            });
+                          }
+                        }}
+                        isDownloading={download.isPending}
+                      />
+                    </object>
+                  )}
+                </div>
+              )
             ) : previewUrl && activeFile?.fileKind === 'image' ? (
               <div className="flex flex-col items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-muted)]/20 p-4">
                 {imageError ? (

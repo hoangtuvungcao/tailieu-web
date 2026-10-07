@@ -105,6 +105,21 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     controller.streamContent,
   );
 
+  // --- Page Images (Fast 50KB Preview) --------------------------------------
+  app.get(
+    '/:id/files/:fileId/pages/:pageNum',
+    {
+      config: {
+        rateLimit: {
+          max: 1200,
+          timeWindow: '15 minutes',
+          keyGenerator: (request) => `pages:${request.ip}`,
+        },
+      },
+    },
+    controller.streamPageImage,
+  );
+
   // --- Ratings --------------------------------------------------------------
   app.post(
     '/:id/ratings',
