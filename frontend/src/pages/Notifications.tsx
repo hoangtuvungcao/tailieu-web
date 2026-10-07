@@ -91,6 +91,8 @@ export function targetHref(notification: Notification): string | null {
     // the recipient wants to open.
     case 'user':
       return `/users/${notification.targetId}`;
+    case 'comment':
+      return `/community`;
     default:
       // An unknown kind stays unlinked rather than becoming `/undefined/...`.
       return null;

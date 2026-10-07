@@ -30,6 +30,8 @@ interface TargetInfo {
   /** What the notification should point at. */
   groupKey: string;
   kind: 'document_like' | 'post_like' | 'comment_like';
+  notificationTargetType?: 'document' | 'post';
+  notificationTargetId?: string;
 }
 
 /**
@@ -66,7 +68,11 @@ async function resolveTarget(
   }
 
   const [row] = await db
-    .select({ ownerUserId: comments.authorUserId })
+    .select({
+      ownerUserId: comments.authorUserId,
+      targetType: comments.targetType,
+      targetId: comments.targetId,
+    })
     .from(comments)
     .where(eq(comments.id, targetId))
     .limit(1);
@@ -77,7 +83,13 @@ async function resolveTarget(
   // than re-resolving that here, this relies on the comment being unreachable
   // in the first place: the comments API refuses to return one whose target the
   // viewer cannot see.
-  return { ownerUserId: row.ownerUserId, groupKey: `comment_like:${targetId}`, kind: 'comment_like' };
+  return {
+    ownerUserId: row.ownerUserId,
+    groupKey: `comment_like:${targetId}`,
+    kind: 'comment_like',
+    notificationTargetType: row.targetType as 'document' | 'post',
+    notificationTargetId: row.targetId,
+  };
 }
 
 /**
@@ -139,14 +151,14 @@ export async function setLike(
         recipientUserId: info.ownerUserId,
         actorUserId: actor.userId,
         kind: info.kind,
-        targetType: target,
-        targetId,
+        targetType: info.notificationTargetType ?? target,
+        targetId: info.notificationTargetId ?? targetId,
         // Collapses a thousand likes on one thing into a single row that reads
         // "A và 999 người khác".
         groupKey: info.groupKey,
         // Actor identity only. A snapshot of the target's title would leak
         // content to someone whose access was revoked after the fact.
-        payload: {},
+        payload: { commentId: target === 'comment' ? targetId : undefined },
       });
 
       // Credited once per thing, not once per like event. The dedupe key is what

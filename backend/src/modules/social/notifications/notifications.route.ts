@@ -2,8 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import { db } from '../../../db/client.js';
-import { notifications, users } from '../../../db/schema/index.js';
-import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import { comments, notifications, users } from '../../../db/schema/index.js';
+import { and, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { paginate, paginationMeta, paginationSchema, toOffset } from '../../../lib/pagination.js';
 import { parseParams, parseQuery } from '../../../lib/validation.js';
 import { uuidSchema } from '../../../lib/validation.js';
@@ -88,13 +88,49 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       db.select({ value: count() }).from(notifications).where(where),
     ]);
 
+    // Self-heal: If notifications target a comment directly, resolve to parent thread (post or document)
+    const commentTargetIds = rows
+      .filter((r) => r.targetType === 'comment' && r.targetId)
+      .map((r) => r.targetId as string);
+
+    const commentParentMap = new Map<string, { targetType: string; targetId: string }>();
+    if (commentTargetIds.length > 0) {
+      const commentRows = await db
+        .select({
+          id: comments.id,
+          targetType: comments.targetType,
+          targetId: comments.targetId,
+        })
+        .from(comments)
+        .where(inArray(comments.id, commentTargetIds));
+
+      for (const c of commentRows) {
+        commentParentMap.set(c.id, { targetType: c.targetType, targetId: c.targetId });
+      }
+    }
+
     const total = Number(totalRow?.value ?? 0);
     return reply.ok(
-      rows.map((row) => ({
-        ...row,
-        createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
-        readAt: row.readAt === null ? null : row.readAt instanceof Date ? row.readAt.toISOString() : row.readAt,
-      })),
+      rows.map((row) => {
+        let finalTargetType = row.targetType;
+        let finalTargetId = row.targetId;
+
+        if (row.targetType === 'comment' && row.targetId) {
+          const parent = commentParentMap.get(row.targetId);
+          if (parent) {
+            finalTargetType = parent.targetType as typeof row.targetType;
+            finalTargetId = parent.targetId;
+          }
+        }
+
+        return {
+          ...row,
+          targetType: finalTargetType,
+          targetId: finalTargetId,
+          createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+          readAt: row.readAt === null ? null : row.readAt instanceof Date ? row.readAt.toISOString() : row.readAt,
+        };
+      }),
       // `paginate` builds the shape `paginationMeta` expects; hand-rolling it
       // produced a mismatch the compiler caught.
       paginationMeta(
