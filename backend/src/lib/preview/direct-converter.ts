@@ -71,10 +71,15 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
       file.detectedMime === 'application/pdf' ||
       file.originalName.toLowerCase().endsWith('.pdf');
 
+    const page1Key = buildDerivedKey(storageObj.objectKey, 'page1', 'jpg');
+    const hasPageImages = await storage
+      .objectExists({ bucket: storageObj.bucket, key: page1Key })
+      .catch(() => false);
+
     if (isOffice) {
       if (file.previewStatus === 'ready' && file.previewContentHash) {
         // PDF artifact already exists, retrieve it for rasterizing pages if not done yet
-        if (!file.pageCount || file.pageCount === 0) {
+        if (!hasPageImages || !file.pageCount) {
           const previewKey = buildDerivedKey(storageObj.objectKey, 'preview', 'pdf');
           try {
             const stream = await storage.getStream({ bucket: storageObj.bucket, key: previewKey });
@@ -157,7 +162,7 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
         });
       }
     } else if (isPdf) {
-      if (!file.pageCount || file.pageCount === 0) {
+      if (!hasPageImages || !file.pageCount) {
         const sourceStream = await storage.getStream({
           bucket: storageObj.bucket,
           key: storageObj.objectKey,
@@ -171,7 +176,7 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
     }
 
     // Rasterize pages to lightweight ~40KB JPEGs if rasterizer is available
-    if (pdfBuffer && (!file.pageCount || file.pageCount === 0)) {
+    if (pdfBuffer && (!hasPageImages || !file.pageCount)) {
       const rasterAvailable = await isRasterizerAvailable();
       if (rasterAvailable) {
         try {

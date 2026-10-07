@@ -51,6 +51,7 @@ export function DocumentPageViewer({
   const [imageError, setImageError] = useState<boolean>(false);
   const [showThumbnails, setShowThumbnails] = useState<boolean>(false);
   const [pageInput, setPageInput] = useState<string>('1');
+  const retryCountRef = useRef<number>(0);
 
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -422,6 +423,7 @@ export function DocumentPageViewer({
                   variant="outline"
                   size="sm"
                   onClick={() => {
+                    retryCountRef.current = 0;
                     setImageError(false);
                     setIsImageLoading(true);
                   }}
@@ -456,8 +458,16 @@ export function DocumentPageViewer({
                 alt={`${fileName || 'Tài liệu'} - Trang ${currentPage}`}
                 onLoad={() => setIsImageLoading(false)}
                 onError={() => {
-                  setIsImageLoading(false);
-                  setImageError(true);
+                  if (currentPage === 1 && retryCountRef.current < 2) {
+                    retryCountRef.current += 1;
+                    setTimeout(() => {
+                      setIsImageLoading(true);
+                      setImageError(false);
+                    }, 1200);
+                  } else {
+                    setIsImageLoading(false);
+                    setImageError(true);
+                  }
                 }}
                 className={cn(
                   'rounded-lg bg-white shadow-md transition-opacity duration-150',

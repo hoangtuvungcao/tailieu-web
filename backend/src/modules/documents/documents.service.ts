@@ -860,7 +860,12 @@ export async function getPreview(
 
     // Auto-rasterize pages if not done yet
     let pageCount = file.pageCount;
-    if ((!pageCount || pageCount === 0) && (await isRasterizerAvailable())) {
+    const page1Key = buildDerivedKey(file.objectKey, 'page1', 'jpg');
+    const page1Exists = await storage
+      .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: page1Key })
+      .catch(() => false);
+
+    if ((!page1Exists || !pageCount) && (await isRasterizerAvailable())) {
       await convertFileDirectly(file.id).catch(() => undefined);
       const [refreshed] = await db
         .select({ pageCount: documentFiles.pageCount })
@@ -1035,6 +1040,18 @@ export async function resolvePageImageTarget(
     .catch(() => false);
 
   if (!exists) {
+    if (await isRasterizerAvailable()) {
+      await convertFileDirectly(file.id).catch(() => undefined);
+      const nowExists = await storage
+        .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: pageKey })
+        .catch(() => false);
+      if (nowExists) {
+        return {
+          bucket: file.bucket || env.S3_BUCKET,
+          key: pageKey,
+        };
+      }
+    }
     throw new AppError('FILE_NOT_FOUND', 'Trang tài liệu chưa sẵn sàng hoặc không tồn tại.');
   }
 
