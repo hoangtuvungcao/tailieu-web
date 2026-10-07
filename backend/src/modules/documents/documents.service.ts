@@ -731,54 +731,81 @@ export async function getPreview(
     };
   }
 
-  // --- Office, still converting -------------------------------------------
-  if (descriptor.kind === 'office' && descriptor.conversion === 'pending') {
-    // 1. Enqueue in Redis for background queue
-    await enqueuePreview({
-      fileId: file.id,
-      documentId,
-      bucket: file.bucket,
-      objectKey: file.objectKey,
-      originalName: file.originalName,
-      detectedMime,
-    }).catch(() => undefined);
+  // --- Office, converting or failed retry ----------------------------------
+  if (
+    descriptor.kind === 'office' &&
+    (descriptor.conversion === 'pending' || descriptor.conversion === 'failed')
+  ) {
+    if (descriptor.conversion === 'failed') {
+      await db
+        .update(documentFiles)
+        .set({ previewStatus: 'queued', previewError: null })
+        .where(eq(documentFiles.id, file.id))
+        .catch(() => undefined);
+    }
 
-    // 2. Also trigger on-demand conversion immediately in background so user doesn't wait
-    void convertFileDirectly(file.id).catch(() => undefined);
+    // 1. Enqueue in Redis for background queue
+    await enqueuePreview(
+      {
+        fileId: file.id,
+        documentId,
+        bucket: file.bucket,
+        objectKey: file.objectKey,
+        originalName: file.originalName,
+        detectedMime,
+      },
+      { force: descriptor.conversion === 'failed' },
+    ).catch(() => undefined);
+
+    // 2. Wait up to 4.5 seconds for direct conversion to finish
+    const directTask = convertFileDirectly(file.id);
+    const converted = await Promise.race([
+      directTask,
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 4500)),
+    ]).catch(() => false);
+
+    if (converted) {
+      const [refreshed] = await db
+        .select({
+          previewStatus: documentFiles.previewStatus,
+          pageCount: documentFiles.pageCount,
+        })
+        .from(documentFiles)
+        .where(eq(documentFiles.id, file.id));
+
+      if (refreshed?.previewStatus === 'ready') {
+        const preview = await repo.findPreviewObject(documentId, file.id);
+        if (preview) {
+          const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
+          let pages: string[] | undefined;
+          if (refreshed.pageCount && refreshed.pageCount > 0) {
+            const token = await signMediaToken({ documentId, fileId: file.id });
+            pages = [];
+            for (let p = 1; p <= refreshed.pageCount; p++) {
+              pages.push(
+                `/api/v1/documents/${documentId}/files/${file.id}/pages/${p}?token=${encodeURIComponent(token)}`,
+              );
+            }
+          }
+          return {
+            ...base,
+            conversion: 'ready',
+            inline: true,
+            url,
+            expiresInSeconds,
+            reason: null,
+            totalPages: refreshed.pageCount,
+            pages,
+          };
+        }
+      }
+    }
 
     return {
       ...base,
       url: null,
       expiresInSeconds: null,
       reason: 'Tài liệu đang được xử lý để xem trước. Vui lòng đợi trong giây lát...',
-    };
-  }
-
-  if (descriptor.kind === 'office' && descriptor.conversion === 'failed') {
-    // Self-heal / retry: re-enqueue preview job so worker converts it again
-    await db
-      .update(documentFiles)
-      .set({ previewStatus: 'queued', previewError: null })
-      .where(eq(documentFiles.id, file.id))
-      .catch(() => undefined);
-
-    await enqueuePreview({
-      fileId: file.id,
-      documentId,
-      bucket: file.bucket,
-      objectKey: file.objectKey,
-      originalName: file.originalName,
-      detectedMime,
-    }, { force: true }).catch(() => undefined);
-
-    // Trigger direct conversion immediately
-    void convertFileDirectly(file.id).catch(() => undefined);
-
-    return {
-      ...base,
-      url: null,
-      expiresInSeconds: null,
-      reason: 'Đang thử tạo lại bản xem trước cho tệp này. Vui lòng đợi trong giây lát...',
     };
   }
 

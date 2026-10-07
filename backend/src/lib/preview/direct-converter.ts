@@ -10,20 +10,28 @@ import { isRasterizerAvailable, rasterizePdfToImages } from './rasterizer.js';
 import { getStorage } from '../storage/index.js';
 import { convertToPdf } from '../../workers/converter/convert.js';
 
-const activeConversions = new Set<string>();
+const activeConversions = new Map<string, Promise<boolean>>();
 
 /**
  * On-demand direct conversion and page rasterization for documents.
  * 1. For Office docs: converts to PDF via LibreOffice (2-3s).
  * 2. For both Office & Native PDFs: renders pages into ultra-fast ~40KB JPEGs via pdftoppm.
  */
-export async function convertFileDirectly(fileId: string): Promise<boolean> {
-  if (activeConversions.has(fileId)) {
-    return false;
+export function convertFileDirectly(fileId: string): Promise<boolean> {
+  const existing = activeConversions.get(fileId);
+  if (existing) {
+    return existing;
   }
 
-  activeConversions.add(fileId);
+  const task = runDirectConversion(fileId).finally(() => {
+    activeConversions.delete(fileId);
+  });
 
+  activeConversions.set(fileId, task);
+  return task;
+}
+
+async function runDirectConversion(fileId: string): Promise<boolean> {
   try {
     const [file] = await db
       .select({
@@ -199,9 +207,11 @@ export async function convertFileDirectly(fileId: string): Promise<boolean> {
       }
     }
 
+    console.log(`[direct-converter] Finished conversion for "${file.originalName}" (${file.id})`);
     return true;
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[direct-converter] Failed conversion for ${fileId}:`, errorMsg);
     await db
       .update(documentFiles)
       .set({
@@ -211,7 +221,5 @@ export async function convertFileDirectly(fileId: string): Promise<boolean> {
       .where(eq(documentFiles.id, fileId))
       .catch(() => undefined);
     return false;
-  } finally {
-    activeConversions.delete(fileId);
   }
 }

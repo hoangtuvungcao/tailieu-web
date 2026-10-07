@@ -229,6 +229,24 @@ export function DocumentDetailPage() {
     }
   }, [activeFile, previewUrl, openPreview]);
 
+  // Auto-poll when preview conversion is in-progress
+  useEffect(() => {
+    if (
+      !previewUrl &&
+      activeFile &&
+      previewReason &&
+      (previewReason.includes('đang được xử lý') ||
+        previewReason.includes('khởi tạo lại') ||
+        previewReason.includes('thử tạo lại') ||
+        previewReason.includes('Vui lòng đợi'))
+    ) {
+      const timer = setTimeout(() => {
+        void openPreview(activeFile, true);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [previewUrl, activeFile, previewReason, openPreview]);
+
   const copyText = useCallback(async () => {
     if (!textContent) return;
     try {
@@ -590,15 +608,44 @@ export function DocumentDetailPage() {
             ) : (
               <Card>
                 <CardContent className="flex flex-col items-center gap-3 p-8 sm:p-10 text-center">
-                  {activeFile?.previewStatus === 'queued' || activeFile?.previewStatus === 'processing' ? (
+                  {Boolean(
+                    activeFile?.previewStatus === 'queued' ||
+                      activeFile?.previewStatus === 'processing' ||
+                      (previewReason &&
+                        (previewReason.includes('đang được xử lý') ||
+                          previewReason.includes('khởi tạo lại') ||
+                          previewReason.includes('thử tạo lại') ||
+                          previewReason.includes('Vui lòng đợi'))),
+                  ) ? (
                     <div className="flex flex-col items-center gap-3 my-2">
-                      <Spinner className="h-8 w-8 text-[var(--color-primary)]" />
+                      <Spinner className="h-9 w-9 text-[var(--color-primary)]" />
                       <p className="text-sm font-semibold text-[var(--color-foreground)]">
-                        {previewReason ?? 'Đang tự động chuyển đổi tài liệu để xem trước...'}
+                        Đang chuẩn bị bản xem trước...
                       </p>
                       <p className="text-xs text-[var(--color-foreground-muted)] max-w-sm">
-                        Hệ thống đang chuẩn bị bản xem trước hiển thị trực tiếp trên thiết bị của bạn. Vui lòng đợi trong giây lát...
+                        {activeFile?.sizeBytes && activeFile.sizeBytes > 5 * 1024 * 1024
+                          ? `Tệp có kích thước lớn (${formatBytes(activeFile.sizeBytes)}), hệ thống đang tối ưu hoá và tách từng trang ảnh siêu tốc. Sẽ tự động mở trong giây lát...`
+                          : 'Hệ thống đang chuẩn bị bản xem trước hiển thị trực tiếp. Sẽ tự động mở trong giây lát...'}
                       </p>
+                      {activeFile && (
+                        <div className="mt-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 text-xs cursor-pointer"
+                            onClick={() =>
+                              void download.mutateAsync({
+                                documentId: document.id,
+                                fileId: activeFile.id,
+                              })
+                            }
+                            isLoading={download.isPending}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Tải tệp về máy
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
