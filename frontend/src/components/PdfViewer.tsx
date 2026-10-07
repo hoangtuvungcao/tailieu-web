@@ -58,11 +58,13 @@ export function PdfViewer({
     setErrorMessage(null);
     setCurrentPage(1);
 
+    const localOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const loadingTask = pdfjsLib.getDocument({
       url,
-      cMapUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
+      cMapUrl: `${localOrigin}/pdfjs/cmaps/`,
       cMapPacked: true,
-      standardFontDataUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
+      standardFontDataUrl: `${localOrigin}/pdfjs/standard_fonts/`,
+      enableXfa: true,
     });
 
     loadingTask.promise
@@ -123,8 +125,8 @@ export function PdfViewer({
 
         const viewport = page.getViewport({ scale: effectiveScale, rotation });
 
-        // Handle high DPI (Retina) displays for crisp text
-        const dpr = window.devicePixelRatio || 1;
+        // Handle high DPI (Retina/mobile) displays for crisp text without memory exhaustion
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5));
         canvas.width = Math.floor(viewport.width * dpr);
         canvas.height = Math.floor(viewport.height * dpr);
         canvas.style.width = `${Math.floor(viewport.width)}px`;
@@ -132,6 +134,8 @@ export function PdfViewer({
 
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(dpr, dpr);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
 
         const renderContext = {
           canvasContext: ctx,

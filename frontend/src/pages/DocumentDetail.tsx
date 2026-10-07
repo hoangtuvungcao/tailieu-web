@@ -104,26 +104,20 @@ export function DocumentDetailPage() {
   const primaryFile = document?.files?.find((file) => file.isPrimary) ?? document?.files?.[0];
   const activeFile = document?.files?.find((file) => file.id === activeFileId) ?? primaryFile;
 
-  const isOfficeKind = (kind: string | undefined): boolean =>
-    Boolean(
-      kind &&
-        [
-          'docx',
-          'pptx',
-          'xlsx',
-          'doc',
-          'ppt',
-          'xls',
-          'odt',
-          'ods',
-          'odp',
-        ].includes(kind),
+  const isOfficeFile = (file: DocumentFile | undefined | null): boolean => {
+    if (!file) return false;
+    const kind = file.fileKind?.toLowerCase() ?? '';
+    const ext = (file.extension || file.originalName.split('.').pop() || '').toLowerCase();
+    return (
+      ['document', 'spreadsheet', 'presentation', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'odt', 'ods', 'odp', 'rtf'].includes(kind) ||
+      ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf'].includes(ext)
     );
+  };
 
   const canPreviewInline = Boolean(
     activeFile &&
-      (['pdf', 'image', 'text', 'code', 'audio', 'video'].includes(activeFile.fileKind) ||
-        isOfficeKind(activeFile.fileKind) ||
+      (['pdf', 'image', 'text', 'code', 'audio', 'video', 'document', 'spreadsheet', 'presentation'].includes(activeFile.fileKind) ||
+        isOfficeFile(activeFile) ||
         activeFile.previewStatus === 'ready'),
   );
 
@@ -150,7 +144,7 @@ export function DocumentDetailPage() {
       if (result.url) {
         const isPdfStream =
           target.fileKind === 'pdf' ||
-          isOfficeKind(target.fileKind) ||
+          isOfficeFile(target) ||
           target.previewStatus === 'ready';
 
         if (isPdfStream) {
@@ -200,11 +194,12 @@ export function DocumentDetailPage() {
     }
   }, [id]);
 
-  // Auto-open preview when file is viewable or ready
+  // Auto-open preview when file is viewable, ready, or convertible office format
   useEffect(() => {
     if (activeFile && !previewUrl && !previewLoading && !previewReason) {
       if (
         ['pdf', 'image', 'text', 'code', 'audio', 'video'].includes(activeFile.fileKind) ||
+        isOfficeFile(activeFile) ||
         activeFile.previewStatus === 'ready'
       ) {
         void openPreview(activeFile);
@@ -359,7 +354,7 @@ export function DocumentDetailPage() {
             {Boolean(
               previewUrl &&
                 (activeFile?.fileKind === 'pdf' ||
-                  isOfficeKind(activeFile?.fileKind) ||
+                  isOfficeFile(activeFile) ||
                   activeFile?.previewStatus === 'ready' ||
                   !['image', 'text', 'code', 'audio', 'video'].includes(activeFile?.fileKind ?? '')),
             ) ? (

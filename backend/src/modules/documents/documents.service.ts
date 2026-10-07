@@ -201,9 +201,17 @@ export async function createDocument(
       detectedMime: string;
     }[] = [];
 
+    const baseNow = Date.now();
     for (const [index, session] of sessions.entries()) {
-      const detectedMime = session.detectedMime ?? 'application/octet-stream';
+      let detectedMime = session.detectedMime ?? 'application/octet-stream';
+      if (detectedMime === 'application/zip' || detectedMime === 'application/x-cfb') {
+        const refined = refineContainerMime(detectedMime, session.originalName, session.declaredMime);
+        if (refined) {
+          detectedMime = refined.mime;
+        }
+      }
       const extension = session.originalName.split('.').pop()?.toLowerCase() ?? null;
+      const fileKind = kindFromMime(detectedMime);
 
       const attached = await repo.attachFile(tx, {
         documentId,
@@ -213,7 +221,7 @@ export async function createDocument(
         sizeBytes: Number(session.totalSize),
         declaredMime: session.declaredMime,
         detectedMime,
-        fileKind: kindFromMime(detectedMime),
+        fileKind,
         isPrimary: index === 0,
         // A file that has not been cleared by the scanner is NOT downloadable —
         // `getDownloadUrl` refuses anything that is not `ready`. So when
@@ -225,6 +233,7 @@ export async function createDocument(
         // Set to `queued` only when a job below is actually enqueued, so the
         // UI never claims a conversion is coming when none was scheduled.
         previewStatus: needsConversion(detectedMime) ? 'queued' : 'none',
+        createdAt: new Date(baseNow + index * 1000),
       });
 
       // Reference counting, in the same transaction as the attach. If these
@@ -282,8 +291,13 @@ export async function createDocument(
     }
 
     // Denormalised onto the document so listing pages need no join.
+    let primaryMime = primarySession.detectedMime ?? 'application/octet-stream';
+    if (primaryMime === 'application/zip' || primaryMime === 'application/x-cfb') {
+      const refined = refineContainerMime(primaryMime, primarySession.originalName, primarySession.declaredMime);
+      if (refined) primaryMime = refined.mime;
+    }
     await repo.updateDocument(tx, documentId, {
-      fileKind: kindFromMime(primarySession.detectedMime ?? 'application/octet-stream'),
+      fileKind: kindFromMime(primaryMime),
       sizeBytes: totalSize,
     });
 
@@ -682,6 +696,12 @@ export async function getPreview(
         await repo.updateDocument(db, documentId, { fileKind: refined.kind }).catch(() => undefined);
       }
     }
+  }
+
+  // Auto-heal convertible office documents whose previewStatus is still 'none'
+  if (needsConversion(detectedMime) && previewStatus === 'none') {
+    previewStatus = 'queued';
+    await repo.updateFileMeta(file.id, { previewStatus: 'queued' }).catch(() => undefined);
   }
 
   const descriptor = resolvePreview({

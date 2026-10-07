@@ -489,6 +489,7 @@ export async function attachFile(
     status: 'pending' | 'ready' | 'failed';
     pageCount: number | null;
     previewStatus: 'none' | 'queued' | 'processing' | 'ready' | 'failed' | 'unsupported';
+    createdAt?: Date;
   },
 ): Promise<{ id: string }> {
   const [row] = await executor
@@ -929,6 +930,36 @@ export async function findPendingConversionFiles(limit = 100, executor: Executor
               ilike(documentFiles.originalName, '%.odt'),
               ilike(documentFiles.originalName, '%.odp'),
               ilike(documentFiles.originalName, '%.ods'),
+            ),
+          ),
+          and(
+            eq(documentFiles.previewStatus, 'none'),
+            or(
+              inArray(documentFiles.detectedMime, [
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.oasis.opendocument.text',
+                'application/rtf',
+                'application/vnd.ms-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.oasis.opendocument.spreadsheet',
+                'text/csv',
+                'application/vnd.ms-powerpoint',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'application/vnd.oasis.opendocument.presentation',
+              ]),
+              or(
+                ilike(documentFiles.originalName, '%.docx'),
+                ilike(documentFiles.originalName, '%.pptx'),
+                ilike(documentFiles.originalName, '%.xlsx'),
+                ilike(documentFiles.originalName, '%.doc'),
+                ilike(documentFiles.originalName, '%.ppt'),
+                ilike(documentFiles.originalName, '%.xls'),
+                ilike(documentFiles.originalName, '%.odt'),
+                ilike(documentFiles.originalName, '%.odp'),
+                ilike(documentFiles.originalName, '%.ods'),
+                ilike(documentFiles.originalName, '%.rtf'),
+              ),
             ),
           ),
         ),
