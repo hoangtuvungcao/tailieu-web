@@ -11,7 +11,7 @@ import {
   Trash2,
   TriangleAlert,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { BookmarkButton } from '@/components/BookmarkButton';
@@ -136,6 +136,15 @@ export function DocumentDetailPage() {
   // hold up to ten, and the server marks the first one primary; until the user
   // picks another row in the sidebar, that is the one on screen.
   const activeFile = document.files.find((file) => file.id === activeFileId) ?? primaryFile;
+
+  useEffect(() => {
+    if (
+      activeFile?.previewStatus === 'ready' &&
+      (previewReason?.includes('xử lý') || previewReason?.includes('khởi tạo'))
+    ) {
+      setPreviewReason(null);
+    }
+  }, [activeFile?.previewStatus, previewReason]);
 
   function selectFile(fileId: string) {
     if (fileId === activeFile?.id) return;

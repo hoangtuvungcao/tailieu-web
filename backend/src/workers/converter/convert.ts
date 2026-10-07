@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -92,9 +93,18 @@ function killProcessTree(pid: number | undefined): void {
  * SOFFICE_PATH overrides both, for a non-standard install location.
  */
 function sofficeBinary(): string {
-  if (process.env.SOFFICE_PATH) return process.env.SOFFICE_PATH;
+  if (process.env.SOFFICE_PATH && existsSync(process.env.SOFFICE_PATH)) {
+    return process.env.SOFFICE_PATH;
+  }
   if (process.platform === 'win32') {
-    return 'C:\\Program Files\\LibreOffice\\program\\soffice.exe';
+    const candidates = [
+      'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+      'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return candidates[0] ?? 'soffice';
   }
   return 'soffice';
 }

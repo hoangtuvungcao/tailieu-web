@@ -5,10 +5,12 @@ import { eq } from 'drizzle-orm';
 import { env } from '../../config/env.js';
 import { closeDatabase, db } from '../../db/client.js';
 import { closeRedis } from '../../db/redis.js';
-import { documentFiles, storageObjects } from '../../db/schema/index.js';
-import { buildDerivedKey } from '../../lib/files/mime.js';
+import { documentFiles, documents, storageObjects } from '../../db/schema/index.js';
+import { buildDerivedKey, refineContainerMime } from '../../lib/files/mime.js';
+import { needsConversion } from '../../lib/preview/preview.resolver.js';
 import {
   deadLetterPreview,
+  enqueuePreview,
   markProcessed,
   markProcessing,
   queueDepth,
@@ -21,6 +23,7 @@ import {
   recoverStaleScanJobs,
 } from '../../lib/scan/queue.js';
 import { getStorage } from '../../lib/storage/index.js';
+import { findPendingConversionFiles } from '../../modules/documents/documents.repository.js';
 import { claimNextJob } from './claim.js';
 import { checkConverterAvailable, ConversionError, convertToPdf } from './convert.js';
 import { assertScannerAvailable, handleScanJob, scanningEnabled } from './scan.js';
@@ -155,6 +158,70 @@ async function handleFailure(job: PreviewJob, reason: string): Promise<void> {
   }
 }
 
+/**
+ * Scan PostgreSQL for files that were never enqueued, lost from Redis,
+ * or misclassified as generic zip/cfb before MIME refinement was available.
+ */
+async function recoverPendingDatabaseJobs(): Promise<number> {
+  let count = 0;
+  try {
+    const pending = await findPendingConversionFiles(200);
+    for (const file of pending) {
+      let detectedMime = file.detectedMime;
+      let fileKind = file.fileKind;
+
+      // 1. Heal legacy misclassified Office files (e.g. uploaded as application/zip)
+      if (detectedMime === 'application/zip' || detectedMime === 'application/x-cfb') {
+        const refined = refineContainerMime(detectedMime, file.originalName);
+        if (refined) {
+          detectedMime = refined.mime;
+          fileKind = refined.kind;
+          await db
+            .update(documentFiles)
+            .set({
+              detectedMime: refined.mime,
+              fileKind: refined.kind,
+              extension: refined.extension,
+              previewStatus: 'queued',
+            })
+            .where(eq(documentFiles.id, file.fileId))
+            .catch(() => undefined);
+
+          await db
+            .update(documents)
+            .set({ fileKind: refined.kind })
+            .where(eq(documents.id, file.documentId))
+            .catch(() => undefined);
+        }
+      }
+
+      // 2. If it needs conversion and is not yet ready with an artifact, queue it
+      if (needsConversion(detectedMime)) {
+        if (file.previewStatus !== 'queued') {
+          await db
+            .update(documentFiles)
+            .set({ previewStatus: 'queued' })
+            .where(eq(documentFiles.id, file.fileId))
+            .catch(() => undefined);
+        }
+
+        const enqueued = await enqueuePreview({
+          fileId: file.fileId,
+          documentId: file.documentId,
+          bucket: file.bucket,
+          objectKey: file.objectKey,
+          originalName: file.originalName,
+          detectedMime,
+        });
+        if (enqueued) count++;
+      }
+    }
+  } catch (err) {
+    error('failed to recover database conversion jobs', { detail: (err as Error).message });
+  }
+  return count;
+}
+
 async function main(): Promise<void> {
   const availability = await checkConverterAvailable();
   if (!availability.ok) {
@@ -197,11 +264,26 @@ async function main(): Promise<void> {
     log('recovered jobs from a previous run', { count: recovered });
   }
 
+  const dbRecovered = await recoverPendingDatabaseJobs();
+  if (dbRecovered > 0) {
+    log('recovered unconverted jobs from database', { count: dbRecovered });
+  }
+
   // A health beacon so `docker ps` and the admin panel can see the worker is
   // alive, and how far behind it is.
+  let lastDbSync = Date.now();
   const heartbeat = setInterval(() => {
     void queueDepth()
-      .then((depth) => log('heartbeat', { ...depth, current: currentJob?.fileId ?? null }))
+      .then(async (depth) => {
+        log('heartbeat', { ...depth, current: currentJob?.fileId ?? null });
+        if (depth.pending === 0 && Date.now() - lastDbSync > 60_000) {
+          lastDbSync = Date.now();
+          const synced = await recoverPendingDatabaseJobs();
+          if (synced > 0) {
+            log('synced unconverted jobs from database', { count: synced });
+          }
+        }
+      })
       .catch(() => undefined);
   }, 60_000);
   heartbeat.unref();

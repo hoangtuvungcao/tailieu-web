@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 
 import { db, type Database } from '../../db/client.js';
 import {
@@ -872,5 +872,67 @@ export async function popularTags(limit = 50) {
     .select({ id: tags.id, slug: tags.slug, name: tags.name, usageCount: tags.usageCount })
     .from(tags)
     .orderBy(desc(tags.usageCount), asc(tags.name))
+    .limit(limit);
+}
+
+export async function updateFileMeta(
+  fileId: string,
+  values: {
+    detectedMime?: string;
+    fileKind?: typeof documentFiles.$inferInsert['fileKind'];
+    extension?: string | null;
+    previewStatus?: 'none' | 'queued' | 'processing' | 'ready' | 'failed' | 'unsupported';
+    previewContentHash?: Buffer | null;
+    previewError?: string | null;
+  },
+  executor: Executor = db,
+) {
+  await executor
+    .update(documentFiles)
+    .set(values)
+    .where(eq(documentFiles.id, fileId));
+}
+
+export async function findPendingConversionFiles(limit = 100, executor: Executor = db) {
+  return executor
+    .select({
+      fileId: documentFiles.id,
+      documentId: documentFiles.documentId,
+      originalName: documentFiles.originalName,
+      detectedMime: documentFiles.detectedMime,
+      fileKind: documentFiles.fileKind,
+      previewStatus: documentFiles.previewStatus,
+      previewContentHash: documentFiles.previewContentHash,
+      bucket: storageObjects.bucket,
+      objectKey: storageObjects.objectKey,
+    })
+    .from(documentFiles)
+    .innerJoin(storageObjects, eq(storageObjects.contentHash, documentFiles.contentHash))
+    .where(
+      and(
+        isNull(documentFiles.deletedAt),
+        or(
+          eq(documentFiles.previewStatus, 'queued'),
+          and(
+            eq(documentFiles.previewStatus, 'ready'),
+            isNull(documentFiles.previewContentHash),
+          ),
+          and(
+            inArray(documentFiles.detectedMime, ['application/zip', 'application/x-cfb']),
+            or(
+              ilike(documentFiles.originalName, '%.docx'),
+              ilike(documentFiles.originalName, '%.pptx'),
+              ilike(documentFiles.originalName, '%.xlsx'),
+              ilike(documentFiles.originalName, '%.doc'),
+              ilike(documentFiles.originalName, '%.ppt'),
+              ilike(documentFiles.originalName, '%.xls'),
+              ilike(documentFiles.originalName, '%.odt'),
+              ilike(documentFiles.originalName, '%.odp'),
+              ilike(documentFiles.originalName, '%.ods'),
+            ),
+          ),
+        ),
+      ),
+    )
     .limit(limit);
 }

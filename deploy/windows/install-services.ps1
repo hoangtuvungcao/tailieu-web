@@ -120,7 +120,7 @@ $Services = @(
         DisplayName = 'TAILIEU TTN Converter Worker'
         Description = 'LibreOffice document-to-PDF conversion worker.'
         Command     = $null
-        Args        = 'node_modules\.bin\tsx.cmd src/workers/converter/index.ts'
+        Args        = 'dist/workers/converter/index.js'
         Directory   = "$InstallRoot\backend"
         DependsOn   = $redisDependency
     },
@@ -129,7 +129,7 @@ $Services = @(
         DisplayName = 'TAILIEU TTN Maintenance'
         Description = 'Reaps abandoned uploads, purges expired tokens, reclaims orphaned objects.'
         Command     = $null
-        Args        = 'node_modules\.bin\tsx.cmd src/workers/cleanup/index.ts --loop'
+        Args        = 'dist/workers/cleanup/index.js --loop'
         Directory   = "$InstallRoot\backend"
         DependsOn   = @()
     },

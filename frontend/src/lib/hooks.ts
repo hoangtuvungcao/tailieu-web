@@ -152,6 +152,14 @@ export function useDocument(id: string | undefined) {
     // Without it a shared link to a document that needs an account renders
     // "not found" on the first load and works after a reload.
     enabled: Boolean(id) && settled,
+    refetchInterval: (query) => {
+      const doc = query.state.data;
+      if (!doc?.files) return false;
+      const isPending = doc.files.some(
+        (f) => f.previewStatus === 'queued' || f.previewStatus === 'processing',
+      );
+      return isPending ? 3000 : false;
+    },
   });
 }
 

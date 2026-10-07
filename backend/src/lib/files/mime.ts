@@ -239,6 +239,39 @@ const CFB_CONTAINER_REFINEMENTS: Record<string, AllowedType> = {
 };
 
 /**
+ * Refine generic container types ('application/zip', 'application/x-cfb')
+ * to specific Office formats (DOCX, PPTX, XLSX, DOC, PPT, XLS, ODT, etc.)
+ * based on the file extension or declared MIME type.
+ */
+export function refineContainerMime(
+  detectedMime: string,
+  originalName: string,
+  declaredMime?: string | null,
+): AllowedType | null {
+  const extension = (originalName.split('.').pop() ?? '').toLowerCase();
+
+  if (detectedMime === 'application/zip') {
+    const refined = ZIP_CONTAINER_REFINEMENTS[extension];
+    if (refined) return refined;
+    if (declaredMime && isCompatible(declaredMime, 'application/zip')) {
+      const declaredAllowed = BY_MIME.get(declaredMime);
+      if (declaredAllowed && declaredAllowed.mime !== 'application/zip') {
+        return declaredAllowed;
+      }
+    }
+  } else if (detectedMime === 'application/x-cfb') {
+    const refined = CFB_CONTAINER_REFINEMENTS[extension];
+    if (refined) return refined;
+    if (declaredMime && isCompatible(declaredMime, 'application/x-cfb')) {
+      const declaredAllowed = BY_MIME.get(declaredMime);
+      if (declaredAllowed) return declaredAllowed;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Magic-byte sniffing, plus text-format fallback.
  *
  * Returns null when nothing matches — the caller treats that as a rejection
@@ -260,30 +293,10 @@ export async function detectFileType(
     // Refine generic ZIP / CFB container to specific Office type if extension or declared MIME matches.
     // OOXML files (.pptx, .docx, .xlsx) are ZIP archives. When sniffing only the leading 4KB (SNIFF_BYTES),
     // file-type frequently reports generic 'application/zip' if internal directories appear later.
-    if (detected.mime === 'application/zip') {
-      const refined = ZIP_CONTAINER_REFINEMENTS[extension];
-      if (refined) {
-        allowed = refined;
-        effectiveMime = refined.mime;
-      } else if (declaredMime && isCompatible(declaredMime, 'application/zip')) {
-        const declaredAllowed = BY_MIME.get(declaredMime);
-        if (declaredAllowed && declaredAllowed.mime !== 'application/zip') {
-          allowed = declaredAllowed;
-          effectiveMime = declaredAllowed.mime;
-        }
-      }
-    } else if (detected.mime === 'application/x-cfb') {
-      const refined = CFB_CONTAINER_REFINEMENTS[extension];
-      if (refined) {
-        allowed = refined;
-        effectiveMime = refined.mime;
-      } else if (declaredMime && isCompatible(declaredMime, 'application/x-cfb')) {
-        const declaredAllowed = BY_MIME.get(declaredMime);
-        if (declaredAllowed) {
-          allowed = declaredAllowed;
-          effectiveMime = declaredAllowed.mime;
-        }
-      }
+    const refined = refineContainerMime(detected.mime, originalName, declaredMime);
+    if (refined) {
+      allowed = refined;
+      effectiveMime = refined.mime;
     }
 
     if (!allowed) {

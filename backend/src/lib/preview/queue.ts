@@ -18,6 +18,7 @@ import { redis } from '../../db/redis.js';
 const QUEUE_KEY = 'preview:queue';
 const PROCESSING_KEY = 'preview:processing';
 const DEAD_LETTER_KEY = 'preview:dead';
+const ENQUEUED_SET_KEY = 'preview:enqueued_ids';
 
 /**
  * Exposed so a consumer can block on several queues at once.
@@ -44,13 +45,26 @@ export interface PreviewJob {
   enqueuedAt: string;
 }
 
-export async function enqueuePreview(job: Omit<PreviewJob, 'attempt' | 'enqueuedAt'>): Promise<void> {
+export async function enqueuePreview(
+  job: Omit<PreviewJob, 'attempt' | 'enqueuedAt'>,
+  options?: { force?: boolean },
+): Promise<boolean> {
+  if (!options?.force) {
+    const added = await redis.sadd(ENQUEUED_SET_KEY, job.fileId);
+    if (added === 0) {
+      return false;
+    }
+  } else {
+    await redis.sadd(ENQUEUED_SET_KEY, job.fileId);
+  }
+
   const payload: PreviewJob = { ...job, attempt: 1, enqueuedAt: new Date().toISOString() };
 
   // LPUSH + BRPOP gives FIFO order: the worker pops from the tail while
   // producers push to the head. RPUSH+LPOP is equivalent; mixing them by
   // accident produces LIFO, which starves the oldest jobs.
   await redis.lpush(QUEUE_KEY, JSON.stringify(payload));
+  return true;
 }
 
 /** Requeue a job that failed, once, with an incremented attempt count. */
@@ -68,6 +82,7 @@ export async function requeuePreview(job: PreviewJob): Promise<void> {
  * which is impossible if the only record is a log line from hours ago.
  */
 export async function deadLetterPreview(job: PreviewJob, reason: string): Promise<void> {
+  await redis.srem(ENQUEUED_SET_KEY, job.fileId);
   await redis.lpush(DEAD_LETTER_KEY, JSON.stringify({ ...job, reason, failedAt: new Date().toISOString() }));
   // Bound the dead-letter list so a systematic failure cannot fill Redis.
   await redis.ltrim(DEAD_LETTER_KEY, 0, 499);
@@ -119,7 +134,10 @@ export async function markProcessing(payload: PreviewJob): Promise<void> {
 }
 
 export async function markProcessed(payload: PreviewJob): Promise<void> {
-  await redis.lrem(PROCESSING_KEY, 0, JSON.stringify(payload));
+  await Promise.all([
+    redis.lrem(PROCESSING_KEY, 0, JSON.stringify(payload)),
+    redis.srem(ENQUEUED_SET_KEY, payload.fileId),
+  ]);
 }
 
 export async function queueDepth(): Promise<{ pending: number; processing: number; dead: number }> {

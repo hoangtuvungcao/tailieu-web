@@ -10,6 +10,7 @@ import { MEDIA_TOKEN_TTL_SECONDS, signMediaToken } from '../../lib/media-token.j
 import { enqueueScan } from '../../lib/scan/queue.js';
 import { scanningEnabled } from '../../workers/converter/scan.js';
 import { needsConversion, resolvePreview, type PreviewDescriptor } from '../../lib/preview/preview.resolver.js';
+import { refineContainerMime } from '../../lib/files/mime.js';
 import { getStorage } from '../../lib/storage/index.js';
 import { env } from '../../config/env.js';
 import { contentDisposition } from '../../lib/http/content-disposition.js';
@@ -657,12 +658,38 @@ export async function getPreview(
     );
   }
 
+  // Auto-heal generic container types (e.g. PPTX/DOCX stored as application/zip before refinement)
+  let detectedMime = file.detectedMime;
+  let fileKind = file.fileKind;
+  let previewStatus = file.previewStatus;
+
+  if (detectedMime === 'application/zip' || detectedMime === 'application/x-cfb') {
+    const refined = refineContainerMime(detectedMime, file.originalName);
+    if (refined) {
+      detectedMime = refined.mime;
+      fileKind = refined.kind;
+      if (previewStatus === 'none') {
+        previewStatus = 'queued';
+      }
+      await repo.updateFileMeta(file.id, {
+        detectedMime: refined.mime,
+        fileKind: refined.kind,
+        extension: refined.extension,
+        previewStatus,
+      }).catch(() => undefined);
+
+      if (file.isPrimary) {
+        await repo.updateDocument(db, documentId, { fileKind: refined.kind }).catch(() => undefined);
+      }
+    }
+  }
+
   const descriptor = resolvePreview({
     fileId: file.id,
-    detectedMime: file.detectedMime,
-    fileKind: file.fileKind,
+    detectedMime,
+    fileKind,
     originalName: file.originalName,
-    previewStatus: file.previewStatus,
+    previewStatus,
   });
 
   const base: Omit<PreviewResponse, 'url' | 'expiresInSeconds' | 'reason'> = {
@@ -682,6 +709,16 @@ export async function getPreview(
 
   // --- Office, still converting -------------------------------------------
   if (descriptor.kind === 'office' && descriptor.conversion === 'pending') {
+    // Ensure the conversion job is enqueued in Redis so worker processes it
+    await enqueuePreview({
+      fileId: file.id,
+      documentId,
+      bucket: file.bucket,
+      objectKey: file.objectKey,
+      originalName: file.originalName,
+      detectedMime,
+    }).catch(() => undefined);
+
     return {
       ...base,
       url: null,
@@ -703,13 +740,22 @@ export async function getPreview(
   if (descriptor.kind === 'office') {
     const preview = await repo.findPreviewObject(documentId, file.id);
     if (!preview) {
-      // Status says ready but the artifact row is missing — a partial failure
-      // the reaper will surface. Report it as pending rather than 500.
+      // Status says ready or pending, but the artifact row is missing.
+      // Self-heal: re-queue the preview conversion so the worker creates the artifact.
+      await enqueuePreview({
+        fileId: file.id,
+        documentId,
+        bucket: file.bucket,
+        objectKey: file.objectKey,
+        originalName: file.originalName,
+        detectedMime,
+      }, { force: true }).catch(() => undefined);
+
       return {
         ...base,
         url: null,
         expiresInSeconds: null,
-        reason: 'Bản xem trước chưa sẵn sàng. Vui lòng thử lại sau.',
+        reason: 'Bản xem trước đang được khởi tạo lại. Vui lòng thử lại sau ít phút.',
       };
     }
 
@@ -719,11 +765,21 @@ export async function getPreview(
       .catch(() => false);
 
     if (!artifactExists) {
+      // Artifact missing from storage backend. Re-queue.
+      await enqueuePreview({
+        fileId: file.id,
+        documentId,
+        bucket: file.bucket,
+        objectKey: file.objectKey,
+        originalName: file.originalName,
+        detectedMime,
+      }, { force: true }).catch(() => undefined);
+
       return {
         ...base,
         url: null,
         expiresInSeconds: null,
-        reason: 'Bản xem trước chưa sẵn sàng trong bộ nhớ lưu trữ. Vui lòng thử lại sau.',
+        reason: 'Bản xem trước đang được khởi tạo lại trong bộ nhớ lưu trữ. Vui lòng thử lại sau.',
       };
     }
 
@@ -796,9 +852,14 @@ export async function resolveContentTarget(
   // browser cannot render a .docx, and the whole point of the conversion
   // worker is that it can render this instead.
   if (mode === 'preview') {
+    let detectedMime = file.detectedMime;
+    if (detectedMime === 'application/zip' || detectedMime === 'application/x-cfb') {
+      const refined = refineContainerMime(detectedMime, file.originalName);
+      if (refined) detectedMime = refined.mime;
+    }
     const descriptor = resolvePreview({
       fileId: file.id,
-      detectedMime: file.detectedMime,
+      detectedMime,
       fileKind: file.fileKind,
       originalName: file.originalName,
       previewStatus: file.previewStatus,

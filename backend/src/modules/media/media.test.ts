@@ -103,6 +103,7 @@ function installFakeStorage(overrides: Partial<StorageDriver>): void {
 /** The fake the content and media routes read bytes through. */
 function installReadableStorage(): void {
   installFakeStorage({
+    objectExists: async () => true,
     objectSize: async () => PDF_BYTES.length,
     getStream: async (_location, options) => {
       const range = options?.range;
