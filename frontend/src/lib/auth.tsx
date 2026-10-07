@@ -49,13 +49,19 @@ interface AuthContextValue {
   /** True until the initial session check finishes. */
   isLoading: boolean;
   isAuthenticated: boolean;
-  signIn: (email: string, password: string) => Promise<CurrentUser>;
+  signIn: (
+    email: string,
+    password: string,
+    captcha?: { token: string; answer: string },
+  ) => Promise<CurrentUser>;
   signUp: (input: {
     email: string;
     password: string;
     displayName: string;
     facultyId?: string | null;
     programId?: string | null;
+    captchaToken?: string;
+    captchaAnswer?: string;
   }) => Promise<CurrentUser>;
   signOut: () => Promise<void>;
   signOutEverywhere: () => Promise<void>;
@@ -121,17 +127,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const result = await api.post<{ user: CurrentUser; accessToken: string }>(
-      '/auth/login',
-      { email, password },
-      { skipAuthRetry: true },
-    );
+  const signIn = useCallback(
+    async (email: string, password: string, captcha?: { token: string; answer: string }) => {
+      const result = await api.post<{ user: CurrentUser; accessToken: string }>(
+        '/auth/login',
+        {
+          email,
+          password,
+          captchaToken: captcha?.token,
+          captchaAnswer: captcha?.answer,
+        },
+        { skipAuthRetry: true },
+      );
 
-    setAccessToken(result.accessToken);
-    setUser(result.user);
-    return result.user;
-  }, []);
+      setAccessToken(result.accessToken);
+      setUser(result.user);
+      return result.user;
+    },
+    [],
+  );
 
   const signUp = useCallback(
     async (input: {
@@ -140,6 +154,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName: string;
       facultyId?: string | null;
       programId?: string | null;
+      captchaToken?: string;
+      captchaAnswer?: string;
     }) => {
       const result = await api.post<{ user: CurrentUser; accessToken: string }>(
         '/auth/register',

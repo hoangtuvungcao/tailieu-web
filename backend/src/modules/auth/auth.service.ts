@@ -652,6 +652,23 @@ export async function requestPasswordReset(email: string): Promise<void> {
       '',
       '— TAILIEU TTN',
     ].join('\n'),
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h2 style="color: #1e3a8a; margin: 0; font-size: 20px;">TAILIEU TTN</h2>
+          <p style="color: #6b7280; font-size: 13px; margin: 4px 0 0;">Kho tri thức cộng đồng Đại học Tây Nguyên</p>
+        </div>
+        <p style="color: #1f2937; font-size: 15px; line-height: 1.6;">Xin chào <strong>${user.displayName}</strong>,</p>
+        <p style="color: #1f2937; font-size: 15px; line-height: 1.6;">Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản TAILIEU TTN của bạn. Nhấn vào nút bên dưới để tiến hành đổi mật khẩu mới:</p>
+        <div style="text-align: center; margin: 28px 0;">
+          <a href="${link}" style="background-color: #2563eb; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-block;">Đặt lại mật khẩu</a>
+        </div>
+        <p style="color: #6b7280; font-size: 13px; line-height: 1.5;">Hoặc bạn có thể sao chép liên kết này vào trình duyệt:<br/><a href="${link}" style="color: #2563eb; word-break: break-all;">${link}</a></p>
+        <hr style="border: none; border-top: 1px solid #f3f4f6; margin: 24px 0;" />
+        <p style="color: #ef4444; font-size: 12px; margin-bottom: 6px;">⚠️ Liên kết có hiệu lực trong 1 giờ và chỉ sử dụng được 1 lần.</p>
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">Nếu bạn không yêu cầu đổi mật khẩu, vui lòng bỏ qua email này. Mật khẩu của bạn vẫn an toàn tuyệt đối.</p>
+      </div>
+    `,
   });
 }
 

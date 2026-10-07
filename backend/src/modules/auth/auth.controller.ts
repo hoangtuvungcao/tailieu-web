@@ -4,6 +4,7 @@ import { AppError } from '../../lib/errors.js';
 import { csrfTokensMatch, tokenPrefix } from '../../lib/tokens.js';
 import { parseBody } from '../../lib/validation.js';
 import { isProduction } from '../../config/env.js';
+import { generateCaptcha, verifyCaptcha } from '../../lib/captcha/captcha.service.js';
 import * as service from './auth.service.js';
 import {
   forgotPasswordSchema,
@@ -87,6 +88,7 @@ const REFRESH_MAX_AGE = 30 * 24 * 60 * 60;
 
 export async function register(request: FastifyRequest, reply: FastifyReply) {
   const body = parseBody(registerSchema, request.body);
+  verifyCaptcha(body.captchaToken, body.captchaAnswer);
   const { user, tokens } = await service.register(body, contextOf(request));
   setAuthCookies(reply, tokens, REFRESH_MAX_AGE);
   reply.status(201);
@@ -99,6 +101,7 @@ export async function register(request: FastifyRequest, reply: FastifyReply) {
 
 export async function login(request: FastifyRequest, reply: FastifyReply) {
   const body = parseBody(loginSchema, request.body);
+  verifyCaptcha(body.captchaToken, body.captchaAnswer);
   const { user, tokens } = await service.login(body, contextOf(request));
   setAuthCookies(reply, tokens, REFRESH_MAX_AGE);
   return reply.ok({ user, accessToken: tokens.accessToken, expiresIn: tokens.expiresIn });
@@ -272,6 +275,7 @@ export async function resendVerification(request: FastifyRequest, reply: Fastify
 
 export async function forgotPassword(request: FastifyRequest, reply: FastifyReply) {
   const body = parseBody(forgotPasswordSchema, request.body);
+  verifyCaptcha(body.captchaToken, body.captchaAnswer);
   await service.requestPasswordReset(body.email);
   // Always the same response, whether or not the address exists.
   return reply.ok(
@@ -279,6 +283,11 @@ export async function forgotPassword(request: FastifyRequest, reply: FastifyRepl
     {},
     'If that email address is registered, a reset link has been sent.',
   );
+}
+
+export async function getCaptcha(_request: FastifyRequest, reply: FastifyReply) {
+  const captcha = generateCaptcha();
+  return reply.ok(captcha);
 }
 
 export async function resetPassword(request: FastifyRequest, reply: FastifyReply) {

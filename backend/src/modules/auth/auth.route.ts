@@ -22,6 +22,19 @@ import * as controller from './auth.controller.js';
  * while still bounding attempts per account.
  */
 export async function authRoutes(app: FastifyInstance): Promise<void> {
+  app.get(
+    '/captcha',
+    {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    controller.getCaptcha,
+  );
+
   app.post(
     '/register',
     {

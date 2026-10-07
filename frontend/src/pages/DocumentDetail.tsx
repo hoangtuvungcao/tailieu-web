@@ -142,29 +142,7 @@ export function DocumentDetailPage() {
         `/documents/${id}/preview?fileId=${target.id}`,
       );
       if (result.url) {
-        const isPdfStream =
-          target.fileKind === 'pdf' ||
-          isOfficeFile(target) ||
-          target.previewStatus === 'ready';
 
-        if (isPdfStream) {
-          try {
-            const probe = await fetch(result.url, {
-              headers: { Range: 'bytes=0-0' },
-            });
-            if (!probe.ok) {
-              setPreviewReason(
-                `Không thể tải dữ liệu tệp từ máy chủ lưu trữ (mã lỗi ${probe.status}). Vui lòng tải tệp về máy hoặc thử lại sau.`,
-              );
-              return;
-            }
-          } catch {
-            setPreviewReason(
-              'Không thể kết nối đến máy chủ lưu trữ tệp. Vui lòng kiểm tra lại kết nối mạng.',
-            );
-            return;
-          }
-        }
 
         setPreviewUrl(result.url);
         if (target.fileKind === 'text' || target.fileKind === 'code') {

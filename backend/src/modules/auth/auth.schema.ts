@@ -25,6 +25,8 @@ export const registerSchema = z
     fullName: z.string().trim().max(120).nullish().transform((v) => v ?? null),
     facultyId: optionalUuid,
     programId: optionalUuid,
+    captchaToken: z.string().optional(),
+    captchaAnswer: z.string().optional(),
   })
   .strict();
 
@@ -35,12 +37,16 @@ export const loginSchema = z
     // at login tells an attacker which passwords are even worth trying, and
     // rejects legitimate legacy passwords after a policy change.
     password: z.string().min(1, 'Vui lòng nhập mật khẩu.').max(200),
+    captchaToken: z.string().optional(),
+    captchaAnswer: z.string().optional(),
   })
   .strict();
 
 export const forgotPasswordSchema = z
   .object({
     email: emailSchema,
+    captchaToken: z.string().optional(),
+    captchaAnswer: z.string().optional(),
   })
   .strict();
 

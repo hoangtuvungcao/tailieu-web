@@ -47,6 +47,9 @@ export type ErrorCode =
   | 'AUTH_WEAK_PASSWORD'
   | 'AUTH_TOKEN_CONSUMED'
   | 'AUTH_PROVIDER_DISABLED'
+  | 'CAPTCHA_REQUIRED'
+  | 'CAPTCHA_INVALID'
+  | 'CAPTCHA_EXPIRED'
   // --- RBAC ------------------------------------------------------------------
   | 'ROLE_NOT_FOUND'
   | 'ROLE_NOT_GRANTABLE'
@@ -131,6 +134,9 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   AUTH_WEAK_PASSWORD: 422,
   AUTH_TOKEN_CONSUMED: 400,
   AUTH_PROVIDER_DISABLED: 501,
+  CAPTCHA_REQUIRED: 400,
+  CAPTCHA_INVALID: 400,
+  CAPTCHA_EXPIRED: 400,
 
   ROLE_NOT_FOUND: 404,
   ROLE_NOT_GRANTABLE: 403,

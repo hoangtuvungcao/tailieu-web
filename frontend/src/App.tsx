@@ -35,8 +35,14 @@ import { ProfileSettingsPage } from '@/pages/ProfileSettings';
 import { DocumentDetailPage } from '@/pages/DocumentDetail';
 import { DocumentsPage } from '@/pages/Documents';
 import { HomePage } from '@/pages/Home';
-import { LoginPage, NotFoundPage, RegisterPage } from '@/pages/auth';
 import { UploadPage } from '@/pages/Upload';
+import {
+  ForgotPasswordPage,
+  LoginPage,
+  NotFoundPage,
+  RegisterPage,
+  ResetPasswordPage,
+} from '@/pages/auth';
 
 // Code-split: the admin screens and their chart code are fetched only when an
 // administrator opens them. Every other visitor would otherwise download a
@@ -562,6 +568,8 @@ export function App() {
         />
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
+        <Route path="forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route
           path="upload"
           element={

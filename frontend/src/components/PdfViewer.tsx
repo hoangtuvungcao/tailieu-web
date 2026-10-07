@@ -65,6 +65,9 @@ export function PdfViewer({
       cMapPacked: true,
       standardFontDataUrl: `${localOrigin}/pdfjs/standard_fonts/`,
       enableXfa: true,
+      disableAutoFetch: true,
+      disableStream: false,
+      rangeChunkSize: 131072,
     });
 
     loadingTask.promise
@@ -164,6 +167,17 @@ export function PdfViewer({
       void renderPage(currentPage);
     }
   }, [pdfDoc, currentPage, renderPage, numPages]);
+
+  // Preload next pages (1-2-3...) in background so switching is instant with 0 delay
+  useEffect(() => {
+    if (!pdfDoc || numPages <= 1) return;
+    const nextPages = [currentPage + 1, currentPage + 2, currentPage + 3].filter(
+      (p) => p <= numPages && p >= 1,
+    );
+    for (const p of nextPages) {
+      void pdfDoc.getPage(p).catch(() => undefined);
+    }
+  }, [pdfDoc, currentPage, numPages]);
 
   // Responsive re-render on window resize / orientation change
   useEffect(() => {

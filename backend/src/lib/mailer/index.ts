@@ -74,16 +74,34 @@ class SmtpMailer implements Mailer {
   private transporter: Transporter | null = null;
 
   private getTransporter(): Transporter {
+    const isGmail =
+      env.SMTP_HOST?.toLowerCase().includes('gmail') ||
+      Boolean(env.SMTP_USER?.toLowerCase().endsWith('@gmail.com'));
+
+    const password = env.SMTP_PASSWORD ? env.SMTP_PASSWORD.replace(/\s+/g, '') : undefined;
+
+    if (isGmail) {
+      this.transporter ??= nodemailer.createTransport({
+        service: 'gmail',
+        auth:
+          env.SMTP_USER && password
+            ? { user: env.SMTP_USER, pass: password }
+            : undefined,
+        connectionTimeout: 15_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 30_000,
+      });
+      return this.transporter;
+    }
+
     this.transporter ??= nodemailer.createTransport({
       host: env.SMTP_HOST,
       port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE,
+      secure: env.SMTP_SECURE || env.SMTP_PORT === 465,
       auth:
-        env.SMTP_USER && env.SMTP_PASSWORD
-          ? { user: env.SMTP_USER, pass: env.SMTP_PASSWORD }
+        env.SMTP_USER && password
+          ? { user: env.SMTP_USER, pass: password }
           : undefined,
-      // Bound the wait: a hanging SMTP handshake inside a request handler
-      // would hold the response open until the client gives up.
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 20_000,
@@ -93,24 +111,27 @@ class SmtpMailer implements Mailer {
 
   async send(message: MailMessage): Promise<void> {
     try {
+      const isGmail =
+        env.SMTP_HOST?.toLowerCase().includes('gmail') ||
+        Boolean(env.SMTP_USER?.toLowerCase().endsWith('@gmail.com'));
+
+      let fromAddress = env.MAIL_FROM;
+      if (isGmail && env.SMTP_USER && fromAddress.includes('tailieu.local')) {
+        fromAddress = `TAILIEU TTN <${env.SMTP_USER}>`;
+      }
+
       await this.getTransporter().sendMail({
-        from: env.MAIL_FROM,
+        from: fromAddress,
         to: message.to,
         subject: message.subject,
         text: message.text,
         html: message.html,
       });
     } catch (error) {
-      // The address is redacted: this log line is written on every failed
-      // delivery and would otherwise accumulate a list of real addresses.
       console.error(
         `[mail] delivery to ${redactEmail(message.to)} failed:`,
         (error as Error).message,
       );
-      // Deliberately swallowed. Registration and password-reset must not fail
-      // because the mail server is down — the token is still valid, and the
-      // user can request another. Surfacing this as a 500 would tell an
-      // attacker which addresses exist by observing which requests error.
     }
   }
 }
