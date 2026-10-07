@@ -208,14 +208,42 @@ export class S3StorageDriver implements StorageDriver {
 
   async objectExists(location: ObjectLocation): Promise<boolean> {
     try {
-      await this.client.send(
-        new HeadObjectCommand({ Bucket: location.bucket, Key: location.key }),
+      // With SeaweedFS (and distributed object stores), metadata (filer) may exist
+      // while the underlying volume needle was deleted or corrupted ('urls not found').
+      // HeadObjectCommand only checks metadata and falsely returns 200 OK.
+      // Probing the first byte (Range: bytes=0-0) guarantees the bytes actually exist on disk.
+      const res = await this.client.send(
+        new GetObjectCommand({
+          Bucket: location.bucket,
+          Key: location.key,
+          Range: 'bytes=0-0',
+        }),
       );
+
+      if (res.Body) {
+        const stream = res.Body as AsyncIterable<Uint8Array> & { destroy?: () => void };
+        try {
+          for await (const _ of stream) {
+            break;
+          }
+        } finally {
+          if (typeof stream.destroy === 'function') {
+            stream.destroy();
+          }
+        }
+      }
       return true;
     } catch (error) {
       const status = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-      const name = (error as Error).name;
-      if (status === 404 || name === 'NotFound' || name === 'NoSuchKey') return false;
+      // 416 means Range Not Satisfiable (e.g. 0-byte file). Fall back to HeadObject.
+      if (status === 416) {
+        try {
+          await this.client.send(new HeadObjectCommand({ Bucket: location.bucket, Key: location.key }));
+          return true;
+        } catch {
+          return false;
+        }
+      }
       return false;
     }
   }
