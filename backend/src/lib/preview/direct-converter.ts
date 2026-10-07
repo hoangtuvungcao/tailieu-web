@@ -121,6 +121,12 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
         convertedContentHash = Buffer.from(upload.contentHash, 'hex');
 
         await db.transaction(async (tx) => {
+          // If a previous preview artifact exists with this previewKey, remove it first
+          // to avoid unique constraint violations on storage_objects_object_key_uq
+          await tx
+            .delete(storageObjects)
+            .where(eq(storageObjects.objectKey, previewKey));
+
           await tx
             .insert(storageObjects)
             .values({
@@ -131,7 +137,14 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
               detectedMime: 'application/pdf',
               refCount: 0,
             })
-            .onConflictDoNothing({ target: storageObjects.contentHash });
+            .onConflictDoUpdate({
+              target: storageObjects.contentHash,
+              set: {
+                objectKey: previewKey,
+                sizeBytes: upload.sizeBytes,
+                detectedMime: 'application/pdf',
+              },
+            });
 
           await tx
             .update(documentFiles)
@@ -174,6 +187,12 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
                 metadata: { derivedFrom: file.id, pageNum: String(page.pageNum) },
               });
               const pageContentHash = Buffer.from(pageUpload.contentHash, 'hex');
+
+              await db
+                .delete(storageObjects)
+                .where(eq(storageObjects.objectKey, pageKey))
+                .catch(() => undefined);
+
               await db
                 .insert(storageObjects)
                 .values({
@@ -184,7 +203,14 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
                   detectedMime: 'image/jpeg',
                   refCount: 0,
                 })
-                .onConflictDoNothing({ target: storageObjects.contentHash })
+                .onConflictDoUpdate({
+                  target: storageObjects.contentHash,
+                  set: {
+                    objectKey: pageKey,
+                    sizeBytes: pageUpload.sizeBytes,
+                    detectedMime: 'image/jpeg',
+                  },
+                })
                 .catch(() => undefined);
             }
 

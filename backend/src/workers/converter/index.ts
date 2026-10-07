@@ -109,10 +109,12 @@ async function processJob(job: PreviewJob): Promise<void> {
 
   // --- Persist ------------------------------------------------------------
   await db.transaction(async (tx) => {
-    // The artifact needs a storage_objects row so the existing signed-URL path
-    // works for it unchanged, and so the reaper can see it. ref_count stays 0:
-    // nothing *references* a preview the way a document references a file, and
-    // the file row's FK is what keeps it alive.
+    // If a previous preview artifact exists with this previewKey, remove it first
+    // to avoid unique constraint violations on storage_objects_object_key_uq
+    await tx
+      .delete(storageObjects)
+      .where(eq(storageObjects.objectKey, previewKey));
+
     await tx
       .insert(storageObjects)
       .values({
@@ -123,7 +125,14 @@ async function processJob(job: PreviewJob): Promise<void> {
         detectedMime: 'application/pdf',
         refCount: 0,
       })
-      .onConflictDoNothing({ target: storageObjects.contentHash });
+      .onConflictDoUpdate({
+        target: storageObjects.contentHash,
+        set: {
+          objectKey: previewKey,
+          sizeBytes: upload.sizeBytes,
+          detectedMime: 'application/pdf',
+        },
+      });
 
     await tx
       .update(documentFiles)
@@ -150,6 +159,12 @@ async function processJob(job: PreviewJob): Promise<void> {
             metadata: { derivedFrom: job.fileId, pageNum: String(page.pageNum) },
           });
           const pageContentHash = Buffer.from(pageUpload.contentHash, 'hex');
+
+          await db
+            .delete(storageObjects)
+            .where(eq(storageObjects.objectKey, pageKey))
+            .catch(() => undefined);
+
           await db
             .insert(storageObjects)
             .values({
@@ -160,7 +175,14 @@ async function processJob(job: PreviewJob): Promise<void> {
               detectedMime: 'image/jpeg',
               refCount: 0,
             })
-            .onConflictDoNothing({ target: storageObjects.contentHash })
+            .onConflictDoUpdate({
+              target: storageObjects.contentHash,
+              set: {
+                objectKey: pageKey,
+                sizeBytes: pageUpload.sizeBytes,
+                detectedMime: 'image/jpeg',
+              },
+            })
             .catch(() => undefined);
         }
 
