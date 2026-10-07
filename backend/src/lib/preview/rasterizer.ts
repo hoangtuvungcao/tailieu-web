@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -29,6 +29,23 @@ export function getPdftoppmBinary(): string {
     for (const c of candidates) {
       if (existsSync(c)) return c;
     }
+
+    // Check subfolders in C:\tailieu\bin\poppler (e.g. poppler-24.02.0)
+    const basePopplerDir = 'C:\\tailieu\\bin\\poppler';
+    if (existsSync(basePopplerDir)) {
+      try {
+        const subs = readdirSync(basePopplerDir);
+        for (const sub of subs) {
+          const subBin1 = path.join(basePopplerDir, sub, 'Library', 'bin', 'pdftoppm.exe');
+          if (existsSync(subBin1)) return subBin1;
+          const subBin2 = path.join(basePopplerDir, sub, 'bin', 'pdftoppm.exe');
+          if (existsSync(subBin2)) return subBin2;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     return 'pdftoppm.exe';
   }
 

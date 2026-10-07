@@ -37,25 +37,35 @@ Write-Host "==========================================================" -Foregro
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # Kiểm tra xem pdftoppm đã có sẵn chưa
-$candidateBins = @(
-    (Join-Path $Destination 'Library\bin\pdftoppm.exe'),
-    (Join-Path $Destination 'bin\pdftoppm.exe'),
-    (Join-Path $Destination 'pdftoppm.exe'),
-    'C:\tailieu\bin\poppler\Library\bin\pdftoppm.exe',
-    'C:\Program Files\poppler\bin\pdftoppm.exe'
-)
-
 $foundBin = $null
-foreach ($bin in $candidateBins) {
-    if (Test-Path $bin) {
-        $foundBin = $bin
-        break
+if (Test-Path $Destination) {
+    $existingItem = Get-ChildItem -Path $Destination -Filter "pdftoppm.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($existingItem) {
+        $foundBin = $existingItem.FullName
+    }
+}
+
+if (!$foundBin) {
+    $candidateBins = @(
+        (Join-Path $Destination 'Library\bin\pdftoppm.exe'),
+        (Join-Path $Destination 'bin\pdftoppm.exe'),
+        (Join-Path $Destination 'pdftoppm.exe'),
+        'C:\tailieu\bin\poppler\Library\bin\pdftoppm.exe',
+        'C:\Program Files\poppler\bin\pdftoppm.exe'
+    )
+    foreach ($bin in $candidateBins) {
+        if (Test-Path $bin) {
+            $foundBin = $bin
+            break
+        }
     }
 }
 
 if ($foundBin) {
     Write-Ok "Da tim thay pdftoppm tai: $foundBin"
     & $foundBin -v
+    [Environment]::SetEnvironmentVariable('PDFTOPPM_PATH', $foundBin, 'Machine')
+    Write-Ok "Da thiet lap bien moi truong PDFTOPPM_PATH vao Machine."
     Write-Host ""
     Write-Ok "Poppler da san sang hoat dong!"
     exit 0
@@ -80,7 +90,7 @@ try {
     Write-Host "Neu may chu khong co Internet truc tiep:" -ForegroundColor Yellow
     Write-Host "1. Tai Release-24.02.0-0.zip tu mot may khac tai: $downloadUrl"
     Write-Host "2. Chep vao thu muc: $Destination"
-    Write-Host "3. Giai nen sao cho co file: $Destination\Library\bin\pdftoppm.exe"
+    Write-Host "3. Giai nen sao cho co file pdftoppm.exe"
     exit 1
 }
 
@@ -106,10 +116,9 @@ try {
 # Kiểm tra lại sau giải nén
 $targetBin = Join-Path $Destination 'Library\bin\pdftoppm.exe'
 if (!(Test-Path $targetBin)) {
-    # Trường hợp thư mục giải nén có subfolder poppler-xx
-    $subBins = Get-ChildItem -Path $Destination -Filter "pdftoppm.exe" -Recurse -ErrorAction SilentlyContinue
-    if ($subBins.Count -gt 0) {
-        $targetBin = $subBins[0].FullName
+    $foundItem = Get-ChildItem -Path $Destination -Filter "pdftoppm.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($foundItem) {
+        $targetBin = $foundItem.FullName
     }
 }
 
