@@ -164,7 +164,7 @@ SeaweedFS là một binary Go, có bản Windows.
 
 ```powershell
 & C:\tools\nssm\nssm.exe install tailieu-storage C:\tailieu\bin\weed.exe
-& C:\tools\nssm\nssm.exe set tailieu-storage AppParameters "server -dir=C:\tailieu\seaweedfs\data -s3 -s3.port=8333 -s3.config=C:\tailieu\seaweedfs\s3.json"
+& C:\tools\nssm\nssm.exe set tailieu-storage AppParameters "server -dir=C:\tailieu\seaweedfs\data -s3 -s3.port=8333 -s3.config=C:\tailieu\seaweedfs\s3.json -master.volumeSizeLimitMB=1024 -volume.max=200 -master.garbageThreshold=1.0"
 & C:\tools\nssm\nssm.exe set tailieu-storage AppStdout C:\tailieu\logs\seaweedfs.log
 & C:\tools\nssm\nssm.exe set tailieu-storage AppStderr C:\tailieu\logs\seaweedfs.error.log
 Start-Service tailieu-storage
@@ -172,8 +172,9 @@ Start-Service tailieu-storage
 
 5. Kiểm tra: `Invoke-WebRequest http://localhost:8333 -UseBasicParsing`
 
-> Đường dẫn trong `-dir` phải là **đường dẫn tuyệt đối** — SeaweedFS không phân
-> giải `~` hay biến môi trường theo cách Windows mong đợi.
+> **Lưu ý quan trọng trên Windows:**
+> - Đường dẫn trong `-dir` phải là **đường dẫn tuyệt đối**.
+> - Tham số `-master.garbageThreshold=1.0` là **bắt buộc trên Windows** để tắt tính năng auto-vacuum khi đang chạy. Trên Windows, khi SeaweedFS tự dọn rác sẽ gặp lỗi file lock (`The process cannot access the file because it is being used by another process`), dẫn tới SeaweedFS xóa nhầm volume và gây mất dữ liệu (`urls not found`).
 
 ### LibreOffice
 
@@ -394,15 +395,32 @@ npm run cleanup
 Kiểm tra Task Scheduler có chạy `tailieu-cleanup` không, hoặc service đó có đang
 chạy không (`Get-Service tailieu-cleanup`).
 
-### Không kết nối được từ Internet
+### Không tìm thấy service `tailieu-api` (`Cannot find any service with service name 'tailieu-api'`)
 
+Nếu `Get-Service *tailieu*` chỉ hiện mỗi `tailieu-storage`, nghĩa là bạn chưa đăng ký các service Node (API, Worker, Cleanup) với Windows.
+
+Chạy script tự động cài đặt:
 ```powershell
-Get-Service tailieu-tunnel
-Get-Content C:\tailieu\logs\tailieu-tunnel.error.log -Tail 30
+cd C:\tailieu\deploy\windows
+.\install-services.ps1 -InstallRoot C:\tailieu -NssmPath C:\tools\nssm\nssm.exe
+
+# Sau khi cài xong, khởi động API:
+Start-Service tailieu-api
 ```
 
-Kiểm tra `API_ORIGIN` trong Cloudflare Pages trỏ tới `api-internal...`, **không**
-phải `tailieu...`.
+Nếu đang chạy API tạm thời bằng cửa sổ CMD / Terminal (`npm run dev` hoặc `node dist/server.js`), bạn chỉ cần tắt cửa sổ đó bằng `Ctrl + C`, `git pull origin main`, `npm run build` và chạy lại.
+
+### SeaweedFS báo lỗi `LookupFileId ... failed, err: urls not found` hoặc `The process cannot access the file because it is being used by another process`
+
+**Nguyên nhân:** Trên Windows, khi SeaweedFS chạy cơ chế dọn rác tự động (auto-vacuum), nó cố ghi đè file `.dat` nhưng bị Windows lock file chặn lại. SeaweedFS tưởng volume bị hỏng nên tự động xóa volume khỏi cụm, làm mất dữ liệu của các file trong volume đó.
+
+**Khắc phục:**
+1. Cập nhật tham số NSSM của `tailieu-storage` để tắt auto-vacuum:
+```powershell
+& C:\tools\nssm\nssm.exe set tailieu-storage AppParameters "server -dir=C:\tailieu\seaweedfs\data -s3 -s3.port=8333 -s3.config=C:\tailieu\seaweedfs\s3.json -master.volumeSizeLimitMB=1024 -volume.max=200 -master.garbageThreshold=1.0"
+Restart-Service tailieu-storage
+```
+2. Cập nhật backend lên phiên bản mới nhất (`git pull origin main && npm run build`). Backend có cơ chế tự chữa lành (Self-healing): khi người dùng tải lại file, backend sẽ kiểm tra nếu file cũ trong storage bị mất ruột thì sẽ giữ lại file mới và cập nhật lại Database thay vì gán nhầm vào file hỏng.
 
 ---
 
