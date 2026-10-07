@@ -129,14 +129,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string, captcha?: { token: string; answer: string }) => {
+      const body: Record<string, unknown> = { email, password };
+      if (captcha?.token && captcha.token !== 'client_fallback') {
+        body.captchaToken = captcha.token;
+        body.captchaAnswer = captcha.answer;
+      }
+
       const result = await api.post<{ user: CurrentUser; accessToken: string }>(
         '/auth/login',
-        {
-          email,
-          password,
-          captchaToken: captcha?.token,
-          captchaAnswer: captcha?.answer,
-        },
+        body,
         { skipAuthRetry: true },
       );
 
@@ -157,9 +158,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       captchaToken?: string;
       captchaAnswer?: string;
     }) => {
+      const body: Record<string, unknown> = { ...input };
+      if (body.captchaToken === 'client_fallback') {
+        delete body.captchaToken;
+        delete body.captchaAnswer;
+      }
+
       const result = await api.post<{ user: CurrentUser; accessToken: string }>(
         '/auth/register',
-        input,
+        body,
         { skipAuthRetry: true },
       );
 

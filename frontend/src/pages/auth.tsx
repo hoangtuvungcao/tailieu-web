@@ -377,11 +377,12 @@ export function ForgotPasswordPage() {
     setFormError(null);
 
     try {
-      await api.post('/auth/password/forgot', {
-        email: values.email,
-        captchaToken,
-        captchaAnswer,
-      });
+      const payload: Record<string, unknown> = { email: values.email };
+      if (captchaToken && captchaToken !== 'client_fallback') {
+        payload.captchaToken = captchaToken;
+        payload.captchaAnswer = captchaAnswer;
+      }
+      await api.post('/auth/password/forgot', payload);
       setSuccessSent(true);
     } catch (error) {
       if (error instanceof ApiError) {
