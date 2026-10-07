@@ -63,6 +63,9 @@ export function usePosts(filters: FeedFilters) {
       );
       return { posts: data, meta: meta as unknown as PaginatedMeta };
     },
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -99,6 +102,9 @@ export function useFeed(filters: Omit<FeedFilters, 'page' | 'cursor'>) {
     // Null means the server has nothing after this page; `undefined` is what
     // react-query reads as "stop".
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -133,7 +139,80 @@ export function useSetLike() {
       api.put<{ liked: boolean; likeCount: number }>(`/likes/post/${input.postId}`, {
         liked: input.liked,
       }),
-    onSuccess: () => {
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: ['social', 'posts'] });
+      await queryClient.cancelQueries({ queryKey: ['social', 'post', input.postId] });
+
+      const prevSinglePost = queryClient.getQueryData<Post>(['social', 'post', input.postId]);
+      if (prevSinglePost) {
+        queryClient.setQueryData<Post>(['social', 'post', input.postId], {
+          ...prevSinglePost,
+          likedByViewer: input.liked,
+          stats: {
+            ...prevSinglePost.stats,
+            likes: Math.max(0, prevSinglePost.stats.likes + (input.liked ? 1 : -1)),
+          },
+        });
+      }
+
+      queryClient.setQueriesData({ queryKey: ['social', 'posts'] }, (oldData: unknown) => {
+        if (!oldData || typeof oldData !== 'object') return oldData;
+        const data = oldData as Record<string, unknown>;
+
+        if (Array.isArray(data.pages)) {
+          return {
+            ...data,
+            pages: data.pages.map((page: unknown) => {
+              const p = page as { posts?: Post[] };
+              if (!Array.isArray(p.posts)) return page;
+              return {
+                ...p,
+                posts: p.posts.map((post) => {
+                  if (post.id !== input.postId) return post;
+                  return {
+                    ...post,
+                    likedByViewer: input.liked,
+                    stats: {
+                      ...post.stats,
+                      likes: Math.max(0, post.stats.likes + (input.liked ? 1 : -1)),
+                    },
+                  };
+                }),
+              };
+            }),
+          };
+        }
+
+        if (Array.isArray(data.posts)) {
+          return {
+            ...data,
+            posts: (data.posts as Post[]).map((post) => {
+              if (post.id !== input.postId) return post;
+              return {
+                ...post,
+                likedByViewer: input.liked,
+                stats: {
+                  ...post.stats,
+                  likes: Math.max(0, post.stats.likes + (input.liked ? 1 : -1)),
+                },
+              };
+            }),
+          };
+        }
+
+        return oldData;
+      });
+
+      return { prevSinglePost };
+    },
+    onError: (_err, input, context) => {
+      if (context?.prevSinglePost) {
+        queryClient.setQueryData(['social', 'post', input.postId], context.prevSinglePost);
+      }
+      void queryClient.invalidateQueries({ queryKey: ['social', 'posts'] });
+    },
+    onSettled: (_data, _err, input) => {
+      void queryClient.invalidateQueries({ queryKey: ['social', 'post', input.postId] });
       void queryClient.invalidateQueries({ queryKey: ['social', 'posts'] });
     },
   });
@@ -156,6 +235,9 @@ export function useDocumentLikeState(id: string | undefined) {
     queryKey: ['social', 'likes', 'document', id],
     queryFn: () => api.get<{ liked: boolean; likeCount: number }>(`/likes/document/${id}`),
     enabled: Boolean(id),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -166,10 +248,28 @@ export function useSetDocumentLike() {
       api.put<{ liked: boolean; likeCount: number }>(`/likes/document/${input.documentId}`, {
         liked: input.liked,
       }),
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: ['social', 'likes', 'document', input.documentId] });
+      const prev = queryClient.getQueryData<{ liked: boolean; likeCount: number }>([
+        'social',
+        'likes',
+        'document',
+        input.documentId,
+      ]);
+      if (prev) {
+        queryClient.setQueryData(['social', 'likes', 'document', input.documentId], {
+          liked: input.liked,
+          likeCount: Math.max(0, prev.likeCount + (input.liked ? 1 : -1)),
+        });
+      }
+      return { prev };
+    },
+    onError: (_err, input, context) => {
+      if (context?.prev) {
+        queryClient.setQueryData(['social', 'likes', 'document', input.documentId], context.prev);
+      }
+    },
     onSuccess: (result, input) => {
-      // The response is the new truth, so it goes straight into the cache
-      // rather than being refetched — and the document itself is invalidated
-      // because `stats.likes` is rendered from it.
       queryClient.setQueryData(['social', 'likes', 'document', input.documentId], result);
       void queryClient.invalidateQueries({ queryKey: ['document', input.documentId] });
     },
@@ -181,12 +281,10 @@ export function usePost(postId: string | undefined) {
   return useQuery({
     queryKey: ['social', 'post', postId],
     queryFn: () => api.get<Post>(`/posts/${postId}`),
-    // No id means the route has not resolved yet, not a missing post. Fetching
-    // `/posts/undefined` would 400 and render an error for a page that is
-    // about to load correctly. `settled` covers the other half: a post that is
-    // not public answers 404 to an anonymous caller, so asking before the
-    // session is restored shows "not found" for a post that is right there.
     enabled: Boolean(postId) && settled,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -242,6 +340,9 @@ export function useComments(targetType: 'post' | 'document', targetId: string | 
       return { comments: data, meta: meta as unknown as PaginatedMeta };
     },
     enabled: Boolean(targetId),
+    refetchInterval: 8_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -288,11 +389,7 @@ export function useDeleteComment() {
 }
 
 /**
- * Like a comment.
- *
- * Same explicit-state contract as posts, and the same endpoint shape — the
- * likes module keys on `(target, id)`, so a comment like is not a separate
- * route with its own semantics.
+ * Like a comment with Optimistic UI Update.
  */
 export function useSetCommentLike() {
   const queryClient = useQueryClient();
@@ -301,7 +398,35 @@ export function useSetCommentLike() {
       api.put<{ liked: boolean; likeCount: number }>(`/likes/comment/${input.commentId}`, {
         liked: input.liked,
       }),
-    onSuccess: () => {
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: ['social', 'comments'] });
+      queryClient.setQueriesData({ queryKey: ['social', 'comments'] }, (oldData: unknown) => {
+        if (!oldData || typeof oldData !== 'object') return oldData;
+        const data = oldData as { comments?: Comment[] };
+        if (!Array.isArray(data.comments)) return oldData;
+
+        const updateTree = (list: Comment[]): Comment[] =>
+          list.map((c) => {
+            if (c.id === input.commentId) {
+              return {
+                ...c,
+                likedByViewer: input.liked,
+                stats: {
+                  ...c.stats,
+                  likes: Math.max(0, c.stats.likes + (input.liked ? 1 : -1)),
+                },
+              };
+            }
+            if (c.replies && c.replies.length > 0) {
+              return { ...c, replies: updateTree(c.replies) };
+            }
+            return c;
+          });
+
+        return { ...data, comments: updateTree(data.comments) };
+      });
+    },
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['social', 'comments'] });
     },
   });
@@ -310,23 +435,16 @@ export function useSetCommentLike() {
 /**
  * The unread badge count.
  *
- * `enabled` is required rather than optional, for the same reason `useForYou`
- * requires it: the endpoint answers 401 without a session. The header renders
- * the bell only when signed in, but "only render it" was not enough — the hook
- * was called unconditionally and fired before the session was restored on a
- * hard reload, so every reload of every page logged a 401 for a signed-in user.
- * Gating the query is what actually stops the request.
+ * Polled while the tab is visible with 12s interval for near-instant notification badge.
  */
 export function useUnreadCount(enabled: boolean) {
   return useQuery({
     queryKey: ['social', 'notifications', 'unread'],
     queryFn: () => api.get<{ unread: number }>('/notifications/unread-count'),
-    // Polled while the tab is visible. The endpoint answers 304 when nothing
-    // changed, so an idle tab transfers headers only — which is what makes a
-    // short interval affordable.
-    refetchInterval: 60_000,
+    refetchInterval: 12_000,
     refetchIntervalInBackground: false,
-    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
     enabled,
   });
 }
@@ -371,6 +489,9 @@ export function useNotifications(page = 1) {
       );
       return { notifications: data, meta: meta as unknown as PaginatedMeta };
     },
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 

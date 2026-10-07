@@ -154,12 +154,13 @@ export function useDocument(id: string | undefined) {
     enabled: Boolean(id) && settled,
     refetchInterval: (query) => {
       const doc = query.state.data;
-      if (!doc?.files) return false;
+      if (!doc?.files) return 15_000;
       const isPending = doc.files.some(
         (f) => f.previewStatus === 'queued' || f.previewStatus === 'processing',
       );
-      return isPending ? 3000 : false;
+      return isPending ? 3000 : 15_000;
     },
+    refetchIntervalInBackground: false,
   });
 }
 

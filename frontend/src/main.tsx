@@ -43,11 +43,11 @@ const queryClient = new QueryClient({
         }
         return failureCount < 1;
       },
-      // 30 seconds of staleness suits a document library: content changes on a
-      // scale of minutes, not seconds, and re-fetching on every tab focus
-      // would make browsing feel busy and waste the tunnel's bandwidth.
-      staleTime: 30_000,
-      refetchOnWindowFocus: false,
+      // 10 seconds staleTime keeps pages fast while promptly picking up updates.
+      // Re-fetching on tab focus ensures that when users return to the tab,
+      // all likes, comments, and notification counters sync immediately.
+      staleTime: 10_000,
+      refetchOnWindowFocus: true,
       // Keep cached pages for five minutes so back-navigation is instant.
       gcTime: 5 * 60_000,
     },
