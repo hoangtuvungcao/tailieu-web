@@ -73,6 +73,18 @@ export function DocumentDetailPage() {
   const canReport = Boolean(document) && !isOwner;
   const reportState = useReportState('document', id, isAuthenticated && canReport);
 
+  const primaryFile = document?.files?.find((file) => file.isPrimary) ?? document?.files?.[0];
+  const activeFile = document?.files?.find((file) => file.id === activeFileId) ?? primaryFile;
+
+  useEffect(() => {
+    if (
+      activeFile?.previewStatus === 'ready' &&
+      (previewReason?.includes('xử lý') || previewReason?.includes('khởi tạo'))
+    ) {
+      setPreviewReason(null);
+    }
+  }, [activeFile?.previewStatus, previewReason]);
+
   // A shared document link is the one URL on this site that people paste into
   // chat, so its preview matters more here than anywhere else: the title, the
   // description the uploader wrote, and `article` so the card renders as
@@ -130,21 +142,6 @@ export function DocumentDetailPage() {
     );
   }
 
-  const primaryFile = document.files.find((file) => file.isPrimary) ?? document.files[0];
-
-  // Which file the preview pane and the download button act on. A document may
-  // hold up to ten, and the server marks the first one primary; until the user
-  // picks another row in the sidebar, that is the one on screen.
-  const activeFile = document.files.find((file) => file.id === activeFileId) ?? primaryFile;
-
-  useEffect(() => {
-    if (
-      activeFile?.previewStatus === 'ready' &&
-      (previewReason?.includes('xử lý') || previewReason?.includes('khởi tạo'))
-    ) {
-      setPreviewReason(null);
-    }
-  }, [activeFile?.previewStatus, previewReason]);
 
   function selectFile(fileId: string) {
     if (fileId === activeFile?.id) return;
