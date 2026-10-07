@@ -389,3 +389,46 @@ ALTER TABLE reputation_events
 -- is precisely the failure the section above describes. This file is for what
 -- the schema DSL cannot express: triggers, functions and CHECK constraints. An
 -- index is not one of those.
+
+-- =============================================================================
+-- LEADERBOARD RUNNING TOTALS: DEDUPLICATION & NULLS NOT DISTINCT
+-- =============================================================================
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables WHERE table_name = 'leaderboard_running_totals'
+  ) THEN
+    CREATE TEMP TABLE IF NOT EXISTS _tmp_leaderboard_dedup AS
+    SELECT
+      min(id) as keep_id,
+      period_type,
+      period_key,
+      scope_type,
+      scope_id,
+      user_id,
+      sum(score) as total_score,
+      max(updated_at) as latest_updated_at
+    FROM leaderboard_running_totals
+    GROUP BY period_type, period_key, scope_type, scope_id, user_id;
+
+    UPDATE leaderboard_running_totals l
+    SET score = t.total_score, updated_at = t.latest_updated_at
+    FROM _tmp_leaderboard_dedup t
+    WHERE l.id = t.keep_id;
+
+    DELETE FROM leaderboard_running_totals l
+    WHERE NOT EXISTS (
+      SELECT 1 FROM _tmp_leaderboard_dedup t WHERE t.keep_id = l.id
+    );
+
+    DROP TABLE IF EXISTS _tmp_leaderboard_dedup;
+
+    ALTER TABLE leaderboard_running_totals DROP CONSTRAINT IF EXISTS leaderboard_running_totals_uq;
+    DROP INDEX IF EXISTS leaderboard_running_totals_uq;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS leaderboard_running_totals_uq
+      ON leaderboard_running_totals (period_type, period_key, scope_type, scope_id, user_id)
+      NULLS NOT DISTINCT;
+  END IF;
+END $$;
+

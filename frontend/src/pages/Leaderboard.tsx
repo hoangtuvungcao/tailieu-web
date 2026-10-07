@@ -126,9 +126,10 @@ export function LeaderboardPage() {
           ) : (
             <ol className="space-y-2">
               {data.entries.map((entry) => (
-                <li key={entry.userId}>
+                <li key={`${entry.userId}-${entry.rank}`}>
                   <Link
                     to={`/users/${entry.userId}`}
+                    title={`Xem trang cá nhân của ${entry.displayName}`}
                     className={cn(
                       'flex items-center gap-3 rounded-lg border p-3 transition-colors',
                       entry.isViewer

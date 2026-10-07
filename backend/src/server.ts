@@ -4,6 +4,8 @@ import { closeDatabase } from './db/client.js';
 import { closeRedis } from './db/redis.js';
 import { getStorage } from './lib/storage/index.js';
 
+import { ensureLeaderboardConstraints } from './modules/social/leaderboards/leaderboards.repository.js';
+
 /**
  * Process entry point.
  *
@@ -25,6 +27,11 @@ async function main(): Promise<void> {
     // buckets really are missing.
     app.log.warn({ err: error }, 'storage provisioning incomplete — continuing');
   }
+
+  // Self-heal leaderboard constraints and deduplicate any running totals
+  await ensureLeaderboardConstraints().catch((err) => {
+    app.log.warn({ err }, 'leaderboard constraint check skipped');
+  });
 
   await app.listen({ port: env.API_PORT, host: env.API_HOST });
 

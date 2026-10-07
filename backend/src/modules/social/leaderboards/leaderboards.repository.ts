@@ -1,4 +1,4 @@
-import { and, count, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { db } from '../../../db/client.js';
 import { leaderboardRunningTotals, users } from '../../../db/schema/index.js';
@@ -48,17 +48,6 @@ function board(
   )!;
 }
 
-/**
- * Rows that belong on a visible board.
- *
- * Positive only. A "top contributors" list including everyone sitting at zero
- * is not a ranking, it is a list of everyone who has ever been liked once and
- * then penalised back — or, worse once the board grows, of everybody.
- */
-function visible(): SQL {
-  return and(sql`${leaderboardRunningTotals.score} > 0`, isNull(users.anonymizedAt))!;
-}
-
 export async function topFor(
   periodKey: string,
   scopeType: LeaderboardScope,
@@ -71,15 +60,14 @@ export async function topFor(
       userId: leaderboardRunningTotals.userId,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
-      score: leaderboardRunningTotals.score,
+      score: sql<number>`sum(${leaderboardRunningTotals.score})::float`,
     })
     .from(leaderboardRunningTotals)
     .innerJoin(users, eq(users.id, leaderboardRunningTotals.userId))
-    .where(and(board(periodKey, scopeType, scopeId), visible()))
-    // `user_id` breaks ties, so a page of equal scores has a stable order
-    // rather than whatever the planner happens to return — which would make
-    // the same board look different on two consecutive loads.
-    .orderBy(desc(leaderboardRunningTotals.score), leaderboardRunningTotals.userId)
+    .where(and(board(periodKey, scopeType, scopeId), isNull(users.anonymizedAt)))
+    .groupBy(leaderboardRunningTotals.userId, users.displayName, users.avatarUrl)
+    .having(sql`sum(${leaderboardRunningTotals.score}) > 0`)
+    .orderBy(desc(sql`sum(${leaderboardRunningTotals.score})`), leaderboardRunningTotals.userId)
     .limit(limit);
 
   return rows.map((row) => ({ ...row, score: Number(row.score) }));
@@ -105,12 +93,12 @@ export async function standingFor(
   executor: Executor = db,
 ): Promise<Standing | null> {
   const [mine] = await executor
-    .select({ score: leaderboardRunningTotals.score })
+    .select({ score: sql<number>`sum(${leaderboardRunningTotals.score})::float` })
     .from(leaderboardRunningTotals)
     .where(and(board(periodKey, scopeType, scopeId), eq(leaderboardRunningTotals.userId, userId)))
-    .limit(1);
+    .groupBy(leaderboardRunningTotals.userId);
 
-  if (!mine) return null;
+  if (!mine || mine.score == null) return null;
 
   const score = Number(mine.score);
   // Present in the table but not on the board — a net zero or a penalty. The
@@ -118,12 +106,71 @@ export async function standingFor(
   if (score <= 0) return null;
 
   const [ahead] = await executor
-    .select({ value: count() })
-    .from(leaderboardRunningTotals)
-    .innerJoin(users, eq(users.id, leaderboardRunningTotals.userId))
-    .where(
-      and(board(periodKey, scopeType, scopeId), visible(), sql`${leaderboardRunningTotals.score} > ${score}`),
+    .select({ value: sql<number>`count(*)::int` })
+    .from(
+      executor
+        .select({
+          userId: leaderboardRunningTotals.userId,
+        })
+        .from(leaderboardRunningTotals)
+        .innerJoin(users, eq(users.id, leaderboardRunningTotals.userId))
+        .where(and(board(periodKey, scopeType, scopeId), isNull(users.anonymizedAt)))
+        .groupBy(leaderboardRunningTotals.userId)
+        .having(sql`sum(${leaderboardRunningTotals.score}) > ${score}`)
+        .as('ahead_users'),
     );
 
   return { rank: Number(ahead?.value ?? 0) + 1, score };
+}
+
+/**
+ * Self-healing maintenance on startup:
+ * 1. Consolidates duplicate rows by user/scope/period if any exist.
+ * 2. Enforces unique constraint/index with NULLS NOT DISTINCT in PostgreSQL.
+ */
+export async function ensureLeaderboardConstraints(): Promise<void> {
+  try {
+    await db.execute(sql`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.tables WHERE table_name = 'leaderboard_running_totals'
+        ) THEN
+          CREATE TEMP TABLE IF NOT EXISTS _tmp_leaderboard_dedup AS
+          SELECT
+            min(id) as keep_id,
+            period_type,
+            period_key,
+            scope_type,
+            scope_id,
+            user_id,
+            sum(score) as total_score,
+            max(updated_at) as latest_updated_at
+          FROM leaderboard_running_totals
+          GROUP BY period_type, period_key, scope_type, scope_id, user_id;
+
+          UPDATE leaderboard_running_totals l
+          SET score = t.total_score, updated_at = t.latest_updated_at
+          FROM _tmp_leaderboard_dedup t
+          WHERE l.id = t.keep_id;
+
+          DELETE FROM leaderboard_running_totals l
+          WHERE NOT EXISTS (
+            SELECT 1 FROM _tmp_leaderboard_dedup t WHERE t.keep_id = l.id
+          );
+
+          DROP TABLE IF EXISTS _tmp_leaderboard_dedup;
+
+          ALTER TABLE leaderboard_running_totals DROP CONSTRAINT IF EXISTS leaderboard_running_totals_uq;
+          DROP INDEX IF EXISTS leaderboard_running_totals_uq;
+
+          CREATE UNIQUE INDEX IF NOT EXISTS leaderboard_running_totals_uq
+            ON leaderboard_running_totals (period_type, period_key, scope_type, scope_id, user_id)
+            NULLS NOT DISTINCT;
+        END IF;
+      END $$;
+    `);
+  } catch (err) {
+    console.warn('[leaderboards] ensureLeaderboardConstraints warning:', err);
+  }
 }
