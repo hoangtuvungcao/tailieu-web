@@ -100,11 +100,13 @@ function sofficeBinary(): string {
     const candidates = [
       'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
       'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe',
+      'C:\\Program Files\\LibreOffice 24\\program\\soffice.exe',
+      'C:\\Program Files\\LibreOffice 7\\program\\soffice.exe',
     ];
     for (const candidate of candidates) {
       if (existsSync(candidate)) return candidate;
     }
-    return candidates[0] ?? 'soffice';
+    return 'soffice.exe';
   }
   return 'soffice';
 }

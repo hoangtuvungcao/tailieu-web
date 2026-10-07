@@ -6,6 +6,7 @@ import { recordAudit } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { paginate, type PaginationInput } from '../../lib/pagination.js';
 import { enqueuePreview } from '../../lib/preview/queue.js';
+import { convertFileDirectly } from '../../lib/preview/direct-converter.js';
 import { MEDIA_TOKEN_TTL_SECONDS, signMediaToken } from '../../lib/media-token.js';
 import { enqueueScan } from '../../lib/scan/queue.js';
 import { scanningEnabled } from '../../workers/converter/scan.js';
@@ -729,7 +730,7 @@ export async function getPreview(
 
   // --- Office, still converting -------------------------------------------
   if (descriptor.kind === 'office' && descriptor.conversion === 'pending') {
-    // Ensure the conversion job is enqueued in Redis so worker processes it
+    // 1. Enqueue in Redis for background queue
     await enqueuePreview({
       fileId: file.id,
       documentId,
@@ -739,11 +740,14 @@ export async function getPreview(
       detectedMime,
     }).catch(() => undefined);
 
+    // 2. Also trigger on-demand conversion immediately in background so user doesn't wait
+    void convertFileDirectly(file.id).catch(() => undefined);
+
     return {
       ...base,
       url: null,
       expiresInSeconds: null,
-      reason: 'Tài liệu đang được xử lý để xem trước. Vui lòng thử lại sau ít phút.',
+      reason: 'Tài liệu đang được xử lý để xem trước. Vui lòng đợi trong giây lát...',
     };
   }
 
@@ -764,6 +768,9 @@ export async function getPreview(
       detectedMime,
     }, { force: true }).catch(() => undefined);
 
+    // Trigger direct conversion immediately
+    void convertFileDirectly(file.id).catch(() => undefined);
+
     return {
       ...base,
       url: null,
@@ -777,7 +784,7 @@ export async function getPreview(
     const preview = await repo.findPreviewObject(documentId, file.id);
     if (!preview) {
       // Status says ready or pending, but the artifact row is missing.
-      // Self-heal: re-queue the preview conversion so the worker creates the artifact.
+      // Self-heal: re-queue and trigger direct conversion
       await enqueuePreview({
         fileId: file.id,
         documentId,
@@ -787,11 +794,13 @@ export async function getPreview(
         detectedMime,
       }, { force: true }).catch(() => undefined);
 
+      void convertFileDirectly(file.id).catch(() => undefined);
+
       return {
         ...base,
         url: null,
         expiresInSeconds: null,
-        reason: 'Bản xem trước đang được khởi tạo lại. Vui lòng thử lại sau ít phút.',
+        reason: 'Bản xem trước đang được khởi tạo lại. Vui lòng đợi trong giây lát...',
       };
     }
 
