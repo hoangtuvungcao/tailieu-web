@@ -102,10 +102,6 @@ export function collectionVisibilityPredicate(viewer: Viewer): SQL {
     clauses.push(sql`${collections.ownerUserId} = ${viewer.userId}`);
   }
 
-  if (viewer.isModerator) {
-    clauses.push(sql`true`);
-  }
-
   return and(sql`${collections.deletedAt} IS NULL`, or(...clauses))!;
 }
 

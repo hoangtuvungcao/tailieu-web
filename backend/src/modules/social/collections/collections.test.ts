@@ -625,14 +625,38 @@ describe('authorisation', () => {
     expect(strangerTitles).not.toContain(`${MARKER}Riêng tư của tôi`);
   });
 
-  it('does not leak a private collection through the public discover list', async () => {
-    await createCollection(`${MARKER}Không được lộ`, 'private');
+  it('does not leak a private collection through the public discover list to anyone, including moderators or owner', async () => {
+    const id = await createCollection(`${MARKER}Không được lộ`, 'private');
 
-    const response = await app.inject({ method: 'GET', url: '/api/v1/collections?limit=100' });
+    // Anonymous visitor
+    const anonRes = await app.inject({ method: 'GET', url: '/api/v1/collections?limit=100' });
+    expect(anonRes.statusCode).toBe(200);
+    const anonTitles = (anonRes.json() as { data: CollectionShape[] }).data.map((c) => c.title);
+    expect(anonTitles).not.toContain(`${MARKER}Không được lộ`);
 
-    expect(response.statusCode).toBe(200);
-    const titles = (response.json() as { data: CollectionShape[] }).data.map((c) => c.title);
-    expect(titles).not.toContain(`${MARKER}Không được lộ`);
+    // Owner browsing discover feed (private collections belong under "mine", not discover)
+    const ownerRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/collections?limit=100',
+      headers: auth(studentToken),
+    });
+    expect(ownerRes.statusCode).toBe(200);
+    const ownerTitles = (ownerRes.json() as { data: CollectionShape[] }).data.map((c) => c.title);
+    expect(ownerTitles).not.toContain(`${MARKER}Không được lộ`);
+
+    // Moderator browsing discover feed must NEVER see users' private collections
+    const modRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/collections?limit=100',
+      headers: auth(moderatorToken),
+    });
+    expect(modRes.statusCode).toBe(200);
+    const modTitles = (modRes.json() as { data: CollectionShape[] }).data.map((c) => c.title);
+    expect(modTitles).not.toContain(`${MARKER}Không được lộ`);
+
+    // Moderator accessing private collection by ID must receive 404 (only owner can read)
+    const modDirect = await getCollection(id, moderatorToken);
+    expect(modDirect.statusCode).toBe(404);
   });
 });
 
