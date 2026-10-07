@@ -125,12 +125,15 @@ export class S3StorageDriver implements StorageDriver {
           }),
         );
       } catch (error) {
-        // Not fatal: some S3-compatible backends do not implement lifecycle
-        // config. The reaper job is the backstop.
-        console.warn(
-          `[storage] could not set lifecycle rule on "${bucket}":`,
-          (error as Error).message,
-        );
+        // Not fatal: some S3-compatible backends (e.g. SeaweedFS) do not implement
+        // lifecycle config. The reaper job is the backstop.
+        const msg = (error as Error).message;
+        if (!msg.toLowerCase().includes('not implemented')) {
+          console.warn(
+            `[storage] could not set lifecycle rule on "${bucket}":`,
+            msg,
+          );
+        }
       }
     }
   }

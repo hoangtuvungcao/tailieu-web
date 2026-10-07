@@ -71,29 +71,47 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
       file.detectedMime === 'application/pdf' ||
       file.originalName.toLowerCase().endsWith('.pdf');
 
+    const targetBucket = storageObj.bucket || env.S3_BUCKET;
     const page1Key = buildDerivedKey(storageObj.objectKey, 'page1', 'jpg');
     const hasPageImages = await storage
-      .objectExists({ bucket: storageObj.bucket, key: page1Key })
+      .objectExists({ bucket: targetBucket, key: page1Key })
       .catch(() => false);
 
     if (isOffice) {
       if (file.previewStatus === 'ready' && file.previewContentHash) {
         // PDF artifact already exists, retrieve it for rasterizing pages if not done yet
         if (!hasPageImages || !file.pageCount) {
-          const previewKey = buildDerivedKey(storageObj.objectKey, 'preview', 'pdf');
+          let previewBucket = targetBucket;
+          let previewKey = buildDerivedKey(storageObj.objectKey, 'preview', 'pdf');
+
+          const [previewObj] = await db
+            .select({
+              bucket: storageObjects.bucket,
+              objectKey: storageObjects.objectKey,
+            })
+            .from(storageObjects)
+            .where(eq(storageObjects.contentHash, file.previewContentHash))
+            .limit(1);
+
+          if (previewObj) {
+            previewBucket = previewObj.bucket || previewBucket;
+            previewKey = previewObj.objectKey;
+          }
+
           try {
-            const stream = await storage.getStream({ bucket: storageObj.bucket, key: previewKey });
+            const stream = await storage.getStream({ bucket: previewBucket, key: previewKey });
             const chunks: Buffer[] = [];
             for await (const chunk of stream) chunks.push(chunk as Buffer);
             pdfBuffer = Buffer.concat(chunks);
-          } catch {
+          } catch (streamErr) {
+            console.warn('[direct-converter] Failed to stream existing preview PDF:', streamErr);
             pdfBuffer = null;
           }
         }
       }
 
-      if (!pdfBuffer && file.previewStatus !== 'ready') {
-        // Mark processing
+      // If PDF buffer is not yet available, convert from source via LibreOffice
+      if (!pdfBuffer) {
         await db
           .update(documentFiles)
           .set({ previewStatus: 'processing', previewError: null })
@@ -101,7 +119,7 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
           .catch(() => undefined);
 
         const sourceStream = await storage.getStream({
-          bucket: storageObj.bucket,
+          bucket: targetBucket,
           key: storageObj.objectKey,
         });
 
@@ -126,8 +144,6 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
         convertedContentHash = Buffer.from(upload.contentHash, 'hex');
 
         await db.transaction(async (tx) => {
-          // If a previous preview artifact exists with this previewKey, remove it first
-          // to avoid unique constraint violations on storage_objects_object_key_uq
           await tx
             .delete(storageObjects)
             .where(eq(storageObjects.objectKey, previewKey));
@@ -164,7 +180,7 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
     } else if (isPdf) {
       if (!hasPageImages || !file.pageCount) {
         const sourceStream = await storage.getStream({
-          bucket: storageObj.bucket,
+          bucket: targetBucket,
           key: storageObj.objectKey,
         });
         const chunks: Buffer[] = [];
@@ -185,7 +201,7 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
             for (const page of pages) {
               const pageKey = buildDerivedKey(storageObj.objectKey, `page${page.pageNum}`, 'jpg');
               const pageUpload = await storage.putStream({
-                bucket: env.S3_BUCKET,
+                bucket: targetBucket,
                 key: pageKey,
                 body: Readable.from([page.buffer]),
                 contentType: 'image/jpeg',
@@ -202,7 +218,7 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
                 .insert(storageObjects)
                 .values({
                   contentHash: pageContentHash,
-                  bucket: env.S3_BUCKET,
+                  bucket: targetBucket,
                   objectKey: pageKey,
                   sizeBytes: pageUpload.sizeBytes,
                   detectedMime: 'image/jpeg',
@@ -231,10 +247,13 @@ async function runDirectConversion(fileId: string): Promise<boolean> {
                 .where(eq(documents.id, file.documentId))
                 .catch(() => undefined);
             }
+            console.log(`[direct-converter] Successfully rasterized ${pages.length} pages for "${file.originalName}"`);
           }
         } catch (rasterErr) {
           console.error('[direct-converter] Rasterization error:', rasterErr);
         }
+      } else {
+        console.warn(`[direct-converter] Rasterizer not available on system, skipping page image generation for "${file.originalName}"`);
       }
     }
 

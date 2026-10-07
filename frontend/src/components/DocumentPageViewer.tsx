@@ -467,6 +467,9 @@ export function DocumentPageViewer({
                   } else {
                     setIsImageLoading(false);
                     setImageError(true);
+                    if (currentPage === 1 && onSwitchToPdf) {
+                      onSwitchToPdf();
+                    }
                   }
                 }}
                 className={cn(

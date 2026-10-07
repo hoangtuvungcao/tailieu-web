@@ -721,6 +721,8 @@ export async function getPreview(
     originalName: file.originalName,
   };
 
+  const storage = getStorage();
+
   // --- No preview available ------------------------------------------------
   if (descriptor.kind === 'none') {
     return {
@@ -778,7 +780,11 @@ export async function getPreview(
         if (preview) {
           const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
           let pages: string[] | undefined;
-          if (refreshed.pageCount && refreshed.pageCount > 0) {
+          const page1Key = buildDerivedKey(file.objectKey, 'page1', 'jpg');
+          const page1Exists = await storage
+            .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: page1Key })
+            .catch(() => false);
+          if (page1Exists && refreshed.pageCount && refreshed.pageCount > 0) {
             const token = await signMediaToken({ documentId, fileId: file.id });
             pages = [];
             for (let p = 1; p <= refreshed.pageCount; p++) {
@@ -834,7 +840,6 @@ export async function getPreview(
       };
     }
 
-    const storage = getStorage();
     const artifactExists = await storage
       .objectExists({ bucket: preview.bucket, key: preview.objectKey })
       .catch(() => false);
@@ -861,11 +866,11 @@ export async function getPreview(
     // Auto-rasterize pages if not done yet
     let pageCount = file.pageCount;
     const page1Key = buildDerivedKey(file.objectKey, 'page1', 'jpg');
-    const page1Exists = await storage
+    let page1Exists = await storage
       .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: page1Key })
       .catch(() => false);
 
-    if ((!page1Exists || !pageCount) && (await isRasterizerAvailable())) {
+    if (!page1Exists && (await isRasterizerAvailable())) {
       await convertFileDirectly(file.id).catch(() => undefined);
       const [refreshed] = await db
         .select({ pageCount: documentFiles.pageCount })
@@ -874,12 +879,15 @@ export async function getPreview(
       if (refreshed?.pageCount) {
         pageCount = refreshed.pageCount;
       }
+      page1Exists = await storage
+        .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: page1Key })
+        .catch(() => false);
     }
 
     const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
 
     let pages: string[] | undefined;
-    if (pageCount && pageCount > 0) {
+    if (page1Exists && pageCount && pageCount > 0) {
       const token = await signMediaToken({ documentId, fileId: file.id });
       pages = [];
       for (let p = 1; p <= pageCount; p++) {
@@ -893,7 +901,6 @@ export async function getPreview(
   }
 
   // --- Natively renderable -------------------------------------------------
-  const storage = getStorage();
   const fileExists = await storage
     .objectExists({ bucket: file.bucket, key: file.objectKey })
     .catch(() => false);
@@ -909,13 +916,14 @@ export async function getPreview(
 
   // For native PDF files, also check if rasterized page images are available or can be generated
   let pageCount = file.pageCount;
+  let page1Exists = false;
   if (descriptor.kind === 'pdf') {
     const page1Key = buildDerivedKey(file.objectKey, 'page1', 'jpg');
-    const page1Exists = await storage
+    page1Exists = await storage
       .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: page1Key })
       .catch(() => false);
 
-    if ((!page1Exists || !pageCount) && (await isRasterizerAvailable())) {
+    if (!page1Exists && (await isRasterizerAvailable())) {
       await convertFileDirectly(file.id).catch(() => undefined);
       const [refreshed] = await db
         .select({ pageCount: documentFiles.pageCount })
@@ -924,13 +932,16 @@ export async function getPreview(
       if (refreshed?.pageCount) {
         pageCount = refreshed.pageCount;
       }
+      page1Exists = await storage
+        .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: page1Key })
+        .catch(() => false);
     }
   }
 
   const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
 
   let pages: string[] | undefined;
-  if (pageCount && pageCount > 0) {
+  if (page1Exists && pageCount && pageCount > 0) {
     const token = await signMediaToken({ documentId, fileId: file.id });
     pages = [];
     for (let p = 1; p <= pageCount; p++) {
@@ -1040,28 +1051,24 @@ export async function resolvePageImageTarget(
 
   const pageKey = buildDerivedKey(file.objectKey, `page${pageNum}`, 'jpg');
   const storage = getStorage();
-  const exists = await storage
-    .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: pageKey })
+  const bucket = file.bucket || env.S3_BUCKET;
+  let exists = await storage
+    .objectExists({ bucket, key: pageKey })
     .catch(() => false);
 
   if (!exists) {
-    if (await isRasterizerAvailable()) {
-      await convertFileDirectly(file.id).catch(() => undefined);
-      const nowExists = await storage
-        .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: pageKey })
-        .catch(() => false);
-      if (nowExists) {
-        return {
-          bucket: file.bucket || env.S3_BUCKET,
-          key: pageKey,
-        };
-      }
-    }
+    await convertFileDirectly(file.id).catch(() => undefined);
+    exists = await storage
+      .objectExists({ bucket, key: pageKey })
+      .catch(() => false);
+  }
+
+  if (!exists) {
     throw new AppError('FILE_NOT_FOUND', 'Trang tài liệu chưa sẵn sàng hoặc không tồn tại.');
   }
 
   return {
-    bucket: file.bucket || env.S3_BUCKET,
+    bucket,
     key: pageKey,
   };
 }
