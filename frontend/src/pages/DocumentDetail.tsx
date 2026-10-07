@@ -12,7 +12,7 @@ import {
   TriangleAlert,
   Volume2,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { BookmarkButton } from '@/components/BookmarkButton';
@@ -104,6 +104,135 @@ export function DocumentDetailPage() {
   const primaryFile = document?.files?.find((file) => file.isPrimary) ?? document?.files?.[0];
   const activeFile = document?.files?.find((file) => file.id === activeFileId) ?? primaryFile;
 
+  const isOfficeKind = (kind: string | undefined): boolean =>
+    Boolean(
+      kind &&
+        [
+          'docx',
+          'pptx',
+          'xlsx',
+          'doc',
+          'ppt',
+          'xls',
+          'odt',
+          'ods',
+          'odp',
+        ].includes(kind),
+    );
+
+  const canPreviewInline = Boolean(
+    activeFile &&
+      (['pdf', 'image', 'text', 'code', 'audio', 'video'].includes(activeFile.fileKind) ||
+        isOfficeKind(activeFile.fileKind) ||
+        activeFile.previewStatus === 'ready'),
+  );
+
+  function selectFile(fileId: string) {
+    if (fileId === activeFile?.id) return;
+    setActiveFileId(fileId);
+    setPreviewUrl(null);
+    setPreviewReason(null);
+    setTextContent(null);
+    setTextError(null);
+    setImageError(false);
+  }
+
+  const openPreview = useCallback(async (target: DocumentFile) => {
+    if (!id) return;
+    setPreviewLoading(true);
+    setPreviewReason(null);
+    setImageError(false);
+    setTextError(null);
+    try {
+      const result = await api.get<{ url: string | null; reason: string | null }>(
+        `/documents/${id}/preview?fileId=${target.id}`,
+      );
+      if (result.url) {
+        const isPdfStream =
+          target.fileKind === 'pdf' ||
+          isOfficeKind(target.fileKind) ||
+          target.previewStatus === 'ready';
+
+        if (isPdfStream) {
+          try {
+            const probe = await fetch(result.url, {
+              headers: { Range: 'bytes=0-0' },
+            });
+            if (!probe.ok) {
+              setPreviewReason(
+                `Không thể tải dữ liệu tệp từ máy chủ lưu trữ (mã lỗi ${probe.status}). Vui lòng tải tệp về máy hoặc thử lại sau.`,
+              );
+              return;
+            }
+          } catch {
+            setPreviewReason(
+              'Không thể kết nối đến máy chủ lưu trữ tệp. Vui lòng kiểm tra lại kết nối mạng.',
+            );
+            return;
+          }
+        }
+
+        setPreviewUrl(result.url);
+        if (target.fileKind === 'text' || target.fileKind === 'code') {
+          setTextLoading(true);
+          try {
+            const res = await fetch(result.url);
+            if (!res.ok) throw new Error('Không thể tải nội dung văn bản.');
+            const text = await res.text();
+            setTextContent(text);
+          } catch (err) {
+            setTextError(err instanceof Error ? err.message : 'Lỗi tải văn bản');
+          } finally {
+            setTextLoading(false);
+          }
+        }
+      } else {
+        setPreviewReason(result.reason);
+      }
+    } catch (err) {
+      setPreviewReason(
+        err instanceof ApiError && err.message
+          ? err.message
+          : 'Không thể tải bản xem trước cho tệp này.',
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [id]);
+
+  // Auto-open preview when file is viewable or ready
+  useEffect(() => {
+    if (activeFile && !previewUrl && !previewLoading && !previewReason) {
+      if (
+        ['pdf', 'image', 'text', 'code', 'audio', 'video'].includes(activeFile.fileKind) ||
+        activeFile.previewStatus === 'ready'
+      ) {
+        void openPreview(activeFile);
+      }
+    }
+  }, [activeFile, previewUrl, previewLoading, previewReason, openPreview]);
+
+  // When an office document finishes conversion, automatically load preview
+  useEffect(() => {
+    if (activeFile?.previewStatus === 'ready') {
+      if (previewReason?.includes('xử lý') || previewReason?.includes('khởi tạo')) {
+        setPreviewReason(null);
+        void openPreview(activeFile);
+      }
+    }
+  }, [activeFile, previewReason, openPreview]);
+
+  const copyText = useCallback(async () => {
+    if (!textContent) return;
+    try {
+      await navigator.clipboard.writeText(textContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  }, [textContent]);
+
 
   // A shared document link is the one URL on this site that people paste into
   // chat, so its preview matters more here than anywhere else: the title, the
@@ -163,135 +292,7 @@ export function DocumentDetailPage() {
   }
 
 
-  function selectFile(fileId: string) {
-    if (fileId === activeFile?.id) return;
-    setActiveFileId(fileId);
-    setPreviewUrl(null);
-    setPreviewReason(null);
-    setTextContent(null);
-    setTextError(null);
-    setImageError(false);
-  }
 
-  const isOfficeKind = (kind: string | undefined): boolean =>
-    Boolean(
-      kind &&
-        [
-          'docx',
-          'pptx',
-          'xlsx',
-          'doc',
-          'ppt',
-          'xls',
-          'odt',
-          'ods',
-          'odp',
-        ].includes(kind),
-    );
-
-  const canPreviewInline = Boolean(
-    activeFile &&
-      (['pdf', 'image', 'text', 'code', 'audio', 'video'].includes(activeFile.fileKind) ||
-        isOfficeKind(activeFile.fileKind) ||
-        activeFile.previewStatus === 'ready'),
-  );
-
-  async function openPreview(target: DocumentFile) {
-    if (!id) return;
-    setPreviewLoading(true);
-    setPreviewReason(null);
-    setImageError(false);
-    setTextError(null);
-    try {
-      const result = await api.get<{ url: string | null; reason: string | null }>(
-        `/documents/${id}/preview?fileId=${target.id}`,
-      );
-      if (result.url) {
-        const isPdfStream =
-          target.fileKind === 'pdf' ||
-          isOfficeKind(target.fileKind) ||
-          target.previewStatus === 'ready';
-
-        if (isPdfStream) {
-          // Probe 1 byte to ensure the PDF stream is reachable and does not 500/404
-          try {
-            const probe = await fetch(result.url, {
-              headers: { Range: 'bytes=0-0' },
-            });
-            if (!probe.ok) {
-              setPreviewReason(
-                `Không thể tải dữ liệu tệp từ máy chủ lưu trữ (mã lỗi ${probe.status}). Vui lòng tải tệp về máy hoặc thử lại sau.`,
-              );
-              return;
-            }
-          } catch {
-            setPreviewReason(
-              'Không thể kết nối đến máy chủ lưu trữ tệp. Vui lòng kiểm tra lại kết nối mạng.',
-            );
-            return;
-          }
-        }
-
-        setPreviewUrl(result.url);
-        if (target.fileKind === 'text' || target.fileKind === 'code') {
-          setTextLoading(true);
-          try {
-            const res = await fetch(result.url);
-            if (!res.ok) throw new Error('Không thể tải nội dung văn bản.');
-            const text = await res.text();
-            setTextContent(text);
-          } catch (err) {
-            setTextError(err instanceof Error ? err.message : 'Lỗi tải văn bản');
-          } finally {
-            setTextLoading(false);
-          }
-        }
-      } else {
-        setPreviewReason(result.reason);
-      }
-    } catch (err) {
-      setPreviewReason(
-        err instanceof ApiError && err.message
-          ? err.message
-          : 'Không thể tải bản xem trước cho tệp này.',
-      );
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
-
-  // Auto-open preview when file is viewable or ready
-  useEffect(() => {
-    if (activeFile && !previewUrl && !previewLoading && !previewReason) {
-      if (
-        ['pdf', 'image', 'text', 'code', 'audio', 'video'].includes(activeFile.fileKind) ||
-        activeFile.previewStatus === 'ready'
-      ) {
-        void openPreview(activeFile);
-      }
-    }
-  }, [activeFile?.id, activeFile?.previewStatus]);
-
-  // When an office document finishes conversion, automatically load preview
-  useEffect(() => {
-    if (activeFile?.previewStatus === 'ready') {
-      if (previewReason?.includes('xử lý') || previewReason?.includes('khởi tạo')) {
-        setPreviewReason(null);
-        void openPreview(activeFile);
-      }
-    }
-  }, [activeFile?.previewStatus, previewReason]);
-
-  async function copyText() {
-    if (!textContent) return;
-    try {
-      await navigator.clipboard.writeText(textContent);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
-    }
-  }
 
   return (
     <div className="container-page py-8">
