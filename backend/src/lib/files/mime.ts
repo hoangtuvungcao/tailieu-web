@@ -167,6 +167,77 @@ export class FileSignatureMismatchError extends Error {
   }
 }
 
+const ZIP_CONTAINER_REFINEMENTS: Record<string, AllowedType> = {
+  pptx: {
+    mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    kind: 'presentation',
+    extension: 'pptx',
+  },
+  ppsx: {
+    mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    kind: 'presentation',
+    extension: 'pptx',
+  },
+  docx: {
+    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    kind: 'document',
+    extension: 'docx',
+  },
+  xlsx: {
+    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    kind: 'spreadsheet',
+    extension: 'xlsx',
+  },
+  odt: {
+    mime: 'application/vnd.oasis.opendocument.text',
+    kind: 'document',
+    extension: 'odt',
+  },
+  ods: {
+    mime: 'application/vnd.oasis.opendocument.spreadsheet',
+    kind: 'spreadsheet',
+    extension: 'ods',
+  },
+  odp: {
+    mime: 'application/vnd.oasis.opendocument.presentation',
+    kind: 'presentation',
+    extension: 'odp',
+  },
+};
+
+const CFB_CONTAINER_REFINEMENTS: Record<string, AllowedType> = {
+  doc: {
+    mime: 'application/msword',
+    kind: 'document',
+    extension: 'doc',
+  },
+  dot: {
+    mime: 'application/msword',
+    kind: 'document',
+    extension: 'doc',
+  },
+  xls: {
+    mime: 'application/vnd.ms-excel',
+    kind: 'spreadsheet',
+    extension: 'xls',
+  },
+  xlt: {
+    mime: 'application/vnd.ms-excel',
+    kind: 'spreadsheet',
+    extension: 'xls',
+  },
+  ppt: {
+    mime: 'application/vnd.ms-powerpoint',
+    kind: 'presentation',
+    extension: 'ppt',
+  },
+  pps: {
+    mime: 'application/vnd.ms-powerpoint',
+    kind: 'presentation',
+    extension: 'ppt',
+  },
+};
+
 /**
  * Magic-byte sniffing, plus text-format fallback.
  *
@@ -183,7 +254,37 @@ export async function detectFileType(
 
   // --- Strong signature present --------------------------------------------
   if (detected) {
-    const allowed = BY_MIME.get(detected.mime);
+    let effectiveMime: string = detected.mime;
+    let allowed: AllowedType | undefined = BY_MIME.get(effectiveMime);
+
+    // Refine generic ZIP / CFB container to specific Office type if extension or declared MIME matches.
+    // OOXML files (.pptx, .docx, .xlsx) are ZIP archives. When sniffing only the leading 4KB (SNIFF_BYTES),
+    // file-type frequently reports generic 'application/zip' if internal directories appear later.
+    if (detected.mime === 'application/zip') {
+      const refined = ZIP_CONTAINER_REFINEMENTS[extension];
+      if (refined) {
+        allowed = refined;
+        effectiveMime = refined.mime;
+      } else if (declaredMime && isCompatible(declaredMime, 'application/zip')) {
+        const declaredAllowed = BY_MIME.get(declaredMime);
+        if (declaredAllowed && declaredAllowed.mime !== 'application/zip') {
+          allowed = declaredAllowed;
+          effectiveMime = declaredAllowed.mime;
+        }
+      }
+    } else if (detected.mime === 'application/x-cfb') {
+      const refined = CFB_CONTAINER_REFINEMENTS[extension];
+      if (refined) {
+        allowed = refined;
+        effectiveMime = refined.mime;
+      } else if (declaredMime && isCompatible(declaredMime, 'application/x-cfb')) {
+        const declaredAllowed = BY_MIME.get(declaredMime);
+        if (declaredAllowed) {
+          allowed = declaredAllowed;
+          effectiveMime = declaredAllowed.mime;
+        }
+      }
+    }
 
     if (!allowed) {
       // Detected something real, but it is not on the allowlist. Do not fall
@@ -195,12 +296,12 @@ export async function detectFileType(
 
     // A declared type that contradicts the bytes is a red flag, not a
     // formality — it is the exact shape of a file-type spoofing attempt.
-    if (declaredMime && declaredMime !== detected.mime && !isCompatible(declaredMime, detected.mime)) {
-      throw new FileSignatureMismatchError(declaredMime, detected.mime, originalName);
+    if (declaredMime && declaredMime !== effectiveMime && !isCompatible(declaredMime, effectiveMime)) {
+      throw new FileSignatureMismatchError(declaredMime, effectiveMime, originalName);
     }
 
     return {
-      mime: detected.mime,
+      mime: effectiveMime,
       kind: allowed.kind,
       extension: allowed.extension,
       declaredMatches: true,
@@ -245,8 +346,11 @@ export async function detectFileType(
  * reject every Word document.
  */
 function isCompatible(declared: string, detected: string): boolean {
+  if (declared === 'application/octet-stream') return true;
+
   const zipBased = new Set([
     'application/zip',
+    'application/x-zip-compressed',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -258,6 +362,7 @@ function isCompatible(declared: string, detected: string): boolean {
 
   // Legacy Office formats share the OLE2 container.
   const oleBased = new Set([
+    'application/x-cfb',
     'application/msword',
     'application/vnd.ms-excel',
     'application/vnd.ms-powerpoint',
