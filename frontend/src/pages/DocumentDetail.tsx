@@ -158,6 +158,26 @@ export function DocumentDetailPage() {
         `/documents/${id}/preview?fileId=${target.id}`,
       );
       if (result.url) {
+        if (target.fileKind === 'pdf' || target.previewStatus === 'ready') {
+          // Probe 1 byte to ensure the PDF stream is reachable and does not 500/404
+          try {
+            const probe = await fetch(result.url, {
+              headers: { Range: 'bytes=0-0' },
+            });
+            if (!probe.ok) {
+              setPreviewReason(
+                `Không thể tải dữ liệu tệp từ máy chủ lưu trữ (mã lỗi ${probe.status}). Vui lòng tải tệp về máy hoặc thử lại sau.`,
+              );
+              return;
+            }
+          } catch {
+            setPreviewReason(
+              'Không thể kết nối đến máy chủ lưu trữ tệp. Vui lòng kiểm tra lại kết nối mạng.',
+            );
+            return;
+          }
+        }
+
         setPreviewUrl(result.url);
         if (target.fileKind === 'text' || target.fileKind === 'code') {
           setTextLoading(true);
@@ -175,8 +195,12 @@ export function DocumentDetailPage() {
       } else {
         setPreviewReason(result.reason);
       }
-    } catch {
-      // Leave the preview closed; the download button is still available.
+    } catch (err) {
+      setPreviewReason(
+        err instanceof ApiError && err.message
+          ? err.message
+          : 'Không thể tải bản xem trước cho tệp này.',
+      );
     } finally {
       setPreviewLoading(false);
     }
@@ -397,7 +421,7 @@ export function DocumentDetailPage() {
               <Card>
                 <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
                   <FileText className="h-10 w-10 text-[var(--color-muted-foreground)]" aria-hidden />
-                  <p className="text-sm text-[var(--color-muted-foreground)]">
+                  <p className="text-sm text-[var(--color-muted-foreground)] max-w-md">
                     {previewReason ??
                       (canPreviewInline
                         ? 'Nhấn để xem trước tài liệu ngay trong trình duyệt.'
@@ -406,7 +430,36 @@ export function DocumentDetailPage() {
                           ? 'Tài liệu đang được xử lý để xem trước. Bạn có thể tải xuống ngay bây giờ.'
                           : 'Định dạng này cần tải xuống để xem. Vui lòng tải tệp về máy.')}
                   </p>
-                  {canPreviewInline && !previewReason && activeFile ? (
+                  {previewReason && activeFile ? (
+                    <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setPreviewReason(null);
+                          void openPreview(activeFile);
+                        }}
+                        isLoading={previewLoading}
+                      >
+                        Thử lại
+                      </Button>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() =>
+                          void download.mutateAsync({
+                            documentId: document.id,
+                            fileId: activeFile.id,
+                          })
+                        }
+                        isLoading={download.isPending}
+                      >
+                        <Download className="h-4 w-4" />
+                        Tải tệp về máy
+                      </Button>
+                    </div>
+                  ) : canPreviewInline && !previewReason && activeFile ? (
                     <Button onClick={() => void openPreview(activeFile)} isLoading={previewLoading}>
                       Xem trước
                     </Button>

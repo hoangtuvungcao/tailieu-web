@@ -214,8 +214,9 @@ export class S3StorageDriver implements StorageDriver {
       return true;
     } catch (error) {
       const status = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-      if (status === 404) return false;
-      throw error;
+      const name = (error as Error).name;
+      if (status === 404 || name === 'NotFound' || name === 'NoSuchKey') return false;
+      return false;
     }
   }
 
@@ -227,7 +228,8 @@ export class S3StorageDriver implements StorageDriver {
       return head.ContentLength ?? null;
     } catch (error) {
       const status = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-      if (status === 404) return null;
+      const name = (error as Error).name;
+      if (status === 404 || name === 'NotFound' || name === 'NoSuchKey') return null;
       throw error;
     }
   }

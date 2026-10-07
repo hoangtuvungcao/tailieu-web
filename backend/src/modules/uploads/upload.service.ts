@@ -398,10 +398,42 @@ export async function completeUpload(
     const existing = await repo.findStorageObjectByHash(tx, contentHash);
 
     if (existing) {
-      // Dedup hit. Discard the copy we just assembled; the bytes already exist.
-      await storage
-        .deleteObject({ bucket: env.S3_BUCKET, key: session.stagingKey })
-        .catch(() => undefined);
+      // Verify that the existing storage object ACTUALLY exists on the storage backend.
+      // If it was lost or deleted, we must NOT discard the newly assembled file.
+      const existsInStorage = await storage
+        .objectExists({ bucket: existing.bucket, key: existing.objectKey })
+        .catch(() => false);
+
+      if (existsInStorage) {
+        // Dedup hit & verified alive. Discard the redundant copy we just assembled.
+        await storage
+          .deleteObject({ bucket: env.S3_BUCKET, key: session.stagingKey })
+          .catch(() => undefined);
+
+        await repo.updateSession(tx, session.id, {
+          status: 'completed',
+          contentHash,
+          detectedMime: detection.mime,
+          completedAt: new Date(),
+        });
+
+        return {
+          contentHash,
+          objectKey: existing.objectKey,
+          detectedMime: existing.detectedMime,
+          sizeBytes: Number(existing.sizeBytes),
+          deduplicated: true,
+        };
+      }
+
+      // Self-heal: the existing record points to missing bytes, so keep the newly
+      // assembled object at stagingKey and update the storage record to point to it.
+      await repo.updateStorageObject(tx, contentHash, {
+        bucket: env.S3_BUCKET,
+        objectKey: session.stagingKey,
+        sizeBytes,
+        detectedMime: detection.mime,
+      });
 
       await repo.updateSession(tx, session.id, {
         status: 'completed',
@@ -412,10 +444,10 @@ export async function completeUpload(
 
       return {
         contentHash,
-        objectKey: existing.objectKey,
-        detectedMime: existing.detectedMime,
-        sizeBytes: Number(existing.sizeBytes),
-        deduplicated: true,
+        objectKey: session.stagingKey,
+        detectedMime: detection.mime,
+        sizeBytes,
+        deduplicated: false,
       };
     }
 

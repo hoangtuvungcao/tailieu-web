@@ -566,6 +566,15 @@ export async function getDownloadUrl(
     throw new AppError('FILE_NOT_FOUND', 'Tệp chưa sẵn sàng để tải xuống.');
   }
 
+  const storage = getStorage();
+  const fileExists = await storage
+    .objectExists({ bucket: file.bucket, key: file.objectKey })
+    .catch(() => false);
+
+  if (!fileExists) {
+    throw new AppError('FILE_NOT_FOUND', 'Tệp tài liệu hiện không khả dụng trong bộ nhớ lưu trữ.');
+  }
+
   const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'download');
 
   // Logged after the URL is minted. A download that was authorized but never
@@ -704,6 +713,20 @@ export async function getPreview(
       };
     }
 
+    const storage = getStorage();
+    const artifactExists = await storage
+      .objectExists({ bucket: preview.bucket, key: preview.objectKey })
+      .catch(() => false);
+
+    if (!artifactExists) {
+      return {
+        ...base,
+        url: null,
+        expiresInSeconds: null,
+        reason: 'Bản xem trước chưa sẵn sàng trong bộ nhớ lưu trữ. Vui lòng thử lại sau.',
+      };
+    }
+
     // The same content route serves the artifact; it resolves the artifact
     // from the file row rather than trusting the caller to name an object.
     const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
@@ -711,6 +734,20 @@ export async function getPreview(
   }
 
   // --- Natively renderable -------------------------------------------------
+  const storage = getStorage();
+  const fileExists = await storage
+    .objectExists({ bucket: file.bucket, key: file.objectKey })
+    .catch(() => false);
+
+  if (!fileExists) {
+    return {
+      ...base,
+      url: null,
+      expiresInSeconds: null,
+      reason: 'Tệp tài liệu hiện không khả dụng trong bộ nhớ lưu trữ. Vui lòng tải lại tệp hoặc liên hệ quản trị viên.',
+    };
+  }
+
   const { url, expiresInSeconds } = await contentUrl(documentId, file.id, 'preview');
   return { ...base, url, expiresInSeconds, reason: null };
 }

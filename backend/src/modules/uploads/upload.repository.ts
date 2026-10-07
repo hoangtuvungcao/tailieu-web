@@ -259,6 +259,22 @@ export async function insertStorageObject(
   return { contentHash: stored.contentHash, objectKey: stored.objectKey };
 }
 
+export async function updateStorageObject(
+  executor: Executor,
+  contentHash: Buffer,
+  values: {
+    bucket: string;
+    objectKey: string;
+    sizeBytes: number;
+    detectedMime: string;
+  },
+): Promise<void> {
+  await executor
+    .update(storageObjects)
+    .set(values)
+    .where(eq(storageObjects.contentHash, contentHash));
+}
+
 /**
  * Increment the reference count, creating the row if necessary.
  *

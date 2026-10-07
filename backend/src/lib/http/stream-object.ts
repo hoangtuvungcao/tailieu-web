@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { AppError } from '../errors.js';
@@ -105,7 +106,14 @@ export async function streamObject(
 ): Promise<FastifyReply> {
   const storage = getStorage();
 
-  const total = await storage.objectSize(options.location);
+  let total: number | null = null;
+  try {
+    total = await storage.objectSize(options.location);
+  } catch (error) {
+    request.log.error({ err: error, location: options.location }, 'failed to get object size from storage');
+    throw new AppError('MEDIA_NOT_FOUND', 'Không thể truy cập tệp từ hệ thống lưu trữ.');
+  }
+
   if (total === null) {
     throw new AppError('MEDIA_NOT_FOUND', 'Không tìm thấy tệp.');
   }
@@ -126,10 +134,16 @@ export async function streamObject(
     range.end = range.start + options.maxRangeBytes - 1;
   }
 
-  const stream = await storage.getStream(
-    options.location,
-    range ? { range: { start: range.start, end: range.end } } : undefined,
-  );
+  let stream: Readable;
+  try {
+    stream = await storage.getStream(
+      options.location,
+      range ? { range: { start: range.start, end: range.end } } : undefined,
+    );
+  } catch (error) {
+    request.log.error({ err: error, location: options.location }, 'failed to get object stream from storage');
+    throw new AppError('MEDIA_NOT_FOUND', 'Không thể truyền dữ liệu tệp từ hệ thống lưu trữ.');
+  }
 
   reply
     .header('content-type', options.contentType)
