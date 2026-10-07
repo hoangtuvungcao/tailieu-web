@@ -14,9 +14,9 @@ describe('captcha.service', () => {
     const captcha = generateCaptcha();
 
     // Decode token payload to extract expected answer: text|expiresAt|nonce
-    const [encodedPayload] = captcha.token.split('.');
+    const [encodedPayload = ''] = captcha.token.split('.');
     const payload = Buffer.from(encodedPayload, 'base64url').toString('utf8');
-    const [expectedAnswer] = payload.split('|');
+    const [expectedAnswer = ''] = payload.split('|');
 
     // Case insensitive check should succeed without throwing
     expect(() => verifyCaptcha(captcha.token, expectedAnswer.toLowerCase())).not.toThrow();
