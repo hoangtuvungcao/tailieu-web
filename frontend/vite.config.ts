@@ -43,6 +43,7 @@ export default defineConfig({
           react: ['react', 'react-dom', 'react-router-dom'],
           query: ['@tanstack/react-query'],
           forms: ['react-hook-form', '@hookform/resolvers', 'zod'],
+          pdfjs: ['pdfjs-dist'],
         },
       },
     },

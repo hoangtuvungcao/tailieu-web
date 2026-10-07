@@ -16,6 +16,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { BookmarkButton } from '@/components/BookmarkButton';
 import { LikeButton } from '@/components/LikeButton';
+import { PdfViewer } from '@/components/PdfViewer';
 import { ReportDialog } from '@/components/ReportDialog';
 import { Badge, Button, Card, CardContent, ErrorState, Skeleton, Spinner } from '@/components/ui';
 import { api, ApiError } from '@/lib/api-client';
@@ -68,6 +69,32 @@ export function DocumentDetailPage() {
   const [reportOpen, setReportOpen] = useState(false);
   /** Null means "whatever the server marked primary". */
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
+
+  const [isMobileDevice, setIsMobileDevice] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      window.innerWidth < 768
+    );
+  });
+  const [viewerMode, setViewerMode] = useState<'inApp' | 'native'>(() => {
+    if (typeof window === 'undefined') return 'inApp';
+    const isMob =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      window.innerWidth < 768;
+    return isMob ? 'inApp' : 'native';
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mob =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        window.innerWidth < 768;
+      setIsMobileDevice(mob);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const isOwner = Boolean(user?.id && document?.owner?.id && user.id === document.owner.id);
   const canReport = Boolean(document) && !isOwner;
@@ -292,47 +319,78 @@ export function DocumentDetailPage() {
           <div className="mt-6">
             {previewUrl &&
             (activeFile?.fileKind === 'pdf' || activeFile?.previewStatus === 'ready') ? (
-              <object
-                data={previewUrl}
-                type="application/pdf"
-                className="h-[70vh] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]"
-                aria-label={`Xem trước ${activeFile?.originalName}`}
-              >
-                <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center bg-[var(--color-muted)]/10">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-red-600 mb-3 shadow-xs">
-                    <FileText className="h-7 w-7" aria-hidden />
-                  </div>
-                  <h3 className="text-base font-semibold text-[var(--color-foreground)] max-w-md truncate">
-                    {activeFile?.originalName ?? 'Tài liệu PDF'}
-                  </h3>
-                  <p className="mt-1.5 max-w-sm text-sm text-[var(--color-foreground-muted)]">
-                    Trình duyệt không hỗ trợ xem trực tiếp PDF trong khung nhúng trên thiết bị này.
-                  </p>
-                  <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-                    <a
-                      href={previewUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white shadow-xs hover:opacity-90 transition-opacity"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      Mở trong tab mới
-                    </a>
-                    {activeFile ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => void download.mutateAsync({ documentId: document.id, fileId: activeFile.id })}
-                        isLoading={download.isPending}
+              <div className="space-y-3">
+                {!isMobileDevice && (
+                  <div className="flex items-center justify-between text-xs text-[var(--color-foreground-muted)] px-1">
+                    <span className="font-medium text-[var(--color-foreground)]">
+                      Bản xem trước: {activeFile?.originalName}
+                    </span>
+                    <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewerMode('native')}
+                        className={cn(
+                          'rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer',
+                          viewerMode === 'native'
+                            ? 'bg-[var(--color-card)] text-[var(--color-foreground)] shadow-xs'
+                            : 'text-[var(--color-foreground-muted)] hover:text-[var(--color-foreground)]',
+                        )}
                       >
-                        <Download className="h-4 w-4" />
-                        Tải tệp về máy
-                      </Button>
-                    ) : null}
+                        Khung nhúng gốc
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewerMode('inApp')}
+                        className={cn(
+                          'rounded-md px-2.5 py-1 font-medium transition-colors cursor-pointer',
+                          viewerMode === 'inApp'
+                            ? 'bg-[var(--color-card)] text-[var(--color-foreground)] shadow-xs'
+                            : 'text-[var(--color-foreground-muted)] hover:text-[var(--color-foreground)]',
+                        )}
+                      >
+                        Trình đọc web
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </object>
+                )}
+
+                {isMobileDevice || viewerMode === 'inApp' ? (
+                  <PdfViewer
+                    url={previewUrl}
+                    fileName={activeFile?.originalName}
+                    onDownload={() => {
+                      if (activeFile) {
+                        void download.mutateAsync({
+                          documentId: document.id,
+                          fileId: activeFile.id,
+                        });
+                      }
+                    }}
+                    isDownloading={download.isPending}
+                  />
+                ) : (
+                  <object
+                    data={previewUrl}
+                    type="application/pdf"
+                    className="h-[75vh] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xs"
+                    aria-label={`Xem trước ${activeFile?.originalName}`}
+                  >
+                    <PdfViewer
+                      url={previewUrl}
+                      fileName={activeFile?.originalName}
+                      onDownload={() => {
+                        if (activeFile) {
+                          void download.mutateAsync({
+                            documentId: document.id,
+                            fileId: activeFile.id,
+                          });
+                        }
+                      }}
+                      isDownloading={download.isPending}
+                    />
+                  </object>
+                )}
+              </div>
             ) : previewUrl && activeFile?.fileKind === 'image' ? (
               <div className="flex flex-col items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-muted)]/20 p-4">
                 {imageError ? (
