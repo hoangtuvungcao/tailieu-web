@@ -80,14 +80,35 @@ const CONVERTIBLE_MIME = new Set([
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'application/vnd.oasis.opendocument.presentation',
+  'application/x-cfb',
+  'application/x-ole-storage',
 ]);
 
-export function needsConversion(mime: string): boolean {
-  return CONVERTIBLE_MIME.has(mime);
+const CONVERTIBLE_EXTENSIONS = new Set([
+  'doc', 'docx', 'dot', 'odt', 'rtf',
+  'xls', 'xlsx', 'xlt', 'ods', 'csv',
+  'ppt', 'pptx', 'pps', 'odp',
+]);
+
+export function isConvertibleMime(mime: string): boolean {
+  return CONVERTIBLE_MIME.has(mime) || mime === 'application/x-cfb' || mime === 'application/x-ole-storage';
 }
 
-export function isConvertible(mime: string): boolean {
-  return CONVERTIBLE_MIME.has(mime);
+export function isConvertibleFile(mime: string, originalName?: string): boolean {
+  if (isConvertibleMime(mime)) return true;
+  if (originalName) {
+    const ext = (originalName.split('.').pop() ?? '').toLowerCase();
+    if (CONVERTIBLE_EXTENSIONS.has(ext)) return true;
+  }
+  return false;
+}
+
+export function needsConversion(mime: string, originalName?: string): boolean {
+  return isConvertibleFile(mime, originalName);
+}
+
+export function isConvertible(mime: string, originalName?: string): boolean {
+  return isConvertibleFile(mime, originalName);
 }
 
 /**
@@ -97,10 +118,10 @@ export function isConvertible(mime: string): boolean {
  * touching the database or storage.
  */
 export function resolvePreview(source: PreviewSource): PreviewDescriptor {
-  const { detectedMime, previewStatus, fileId } = source;
+  const { detectedMime, previewStatus, fileId, originalName } = source;
 
   // --- Office: depends on the conversion artifact --------------------------
-  if (needsConversion(detectedMime)) {
+  if (needsConversion(detectedMime, originalName)) {
     return {
       kind: 'office',
       // An office document becomes inline-renderable only once its PDF exists.

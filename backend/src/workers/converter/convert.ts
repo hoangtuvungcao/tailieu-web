@@ -159,9 +159,17 @@ export async function convertToPdf(
     const pdfPath = path.join(outputDir, `${baseName}.pdf`);
 
     let pdfStat;
-    try {
-      pdfStat = await stat(pdfPath);
-    } catch {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        pdfStat = await stat(pdfPath);
+        if (pdfStat && pdfStat.size > 0) break;
+      } catch {
+        // Wait 150ms for Windows filesystem flush
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    }
+
+    if (!pdfStat) {
       // soffice returned success but wrote nothing. This happens with
       // password-protected files and some malformed documents.
       throw new ConversionError(

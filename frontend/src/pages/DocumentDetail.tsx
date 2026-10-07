@@ -12,7 +12,7 @@ import {
   TriangleAlert,
   Volume2,
 } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { BookmarkButton } from '@/components/BookmarkButton';
@@ -70,6 +70,8 @@ export function DocumentDetailPage() {
   const [reportOpen, setReportOpen] = useState(false);
   /** Null means "whatever the server marked primary". */
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const lastPreviewAttemptRef = useRef<{ fileId: string; timestamp: number } | null>(null);
+  const prevPreviewStatusRef = useRef<string | null>(null);
 
   const [isMobileDevice, setIsMobileDevice] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -131,46 +133,53 @@ export function DocumentDetailPage() {
     setImageError(false);
   }
 
-  const openPreview = useCallback(async (target: DocumentFile) => {
-    if (!id) return;
-    setPreviewLoading(true);
-    setPreviewReason(null);
-    setImageError(false);
-    setTextError(null);
-    try {
-      const result = await api.get<{ url: string | null; reason: string | null }>(
-        `/documents/${id}/preview?fileId=${target.id}`,
-      );
-      if (result.url) {
-
-
-        setPreviewUrl(result.url);
-        if (target.fileKind === 'text' || target.fileKind === 'code') {
-          setTextLoading(true);
-          try {
-            const res = await fetch(result.url);
-            if (!res.ok) throw new Error('Không thể tải nội dung văn bản.');
-            const text = await res.text();
-            setTextContent(text);
-          } catch (err) {
-            setTextError(err instanceof Error ? err.message : 'Lỗi tải văn bản');
-          } finally {
-            setTextLoading(false);
-          }
-        }
-      } else {
-        setPreviewReason(result.reason);
+  const openPreview = useCallback(
+    async (target: DocumentFile, force = false) => {
+      if (!id) return;
+      const now = Date.now();
+      if (!force && lastPreviewAttemptRef.current?.fileId === target.id && now - lastPreviewAttemptRef.current.timestamp < 3000) {
+        return;
       }
-    } catch (err) {
-      setPreviewReason(
-        err instanceof ApiError && err.message
-          ? err.message
-          : 'Không thể tải bản xem trước cho tệp này.',
-      );
-    } finally {
-      setPreviewLoading(false);
-    }
-  }, [id]);
+      lastPreviewAttemptRef.current = { fileId: target.id, timestamp: now };
+
+      setPreviewLoading(true);
+      setPreviewReason(null);
+      setImageError(false);
+      setTextError(null);
+      try {
+        const result = await api.get<{ url: string | null; reason: string | null }>(
+          `/documents/${id}/preview?fileId=${target.id}${force ? '&retry=1' : ''}`,
+        );
+        if (result.url) {
+          setPreviewUrl(result.url);
+          if (target.fileKind === 'text' || target.fileKind === 'code') {
+            setTextLoading(true);
+            try {
+              const res = await fetch(result.url);
+              if (!res.ok) throw new Error('Không thể tải nội dung văn bản.');
+              const text = await res.text();
+              setTextContent(text);
+            } catch (err) {
+              setTextError(err instanceof Error ? err.message : 'Lỗi tải văn bản');
+            } finally {
+              setTextLoading(false);
+            }
+          }
+        } else {
+          setPreviewReason(result.reason);
+        }
+      } catch (err) {
+        setPreviewReason(
+          err instanceof ApiError && err.message
+            ? err.message
+            : 'Không thể tải bản xem trước cho tệp này.',
+        );
+      } finally {
+        setPreviewLoading(false);
+      }
+    },
+    [id],
+  );
 
   // Auto-open preview when file is viewable, ready, or convertible office format
   useEffect(() => {
@@ -185,15 +194,22 @@ export function DocumentDetailPage() {
     }
   }, [activeFile, previewUrl, previewLoading, previewReason, openPreview]);
 
-  // When an office document finishes conversion, automatically load preview
+  // When an office document transitions from pending to ready, load preview cleanly ONCE
   useEffect(() => {
-    if (activeFile?.previewStatus === 'ready') {
-      if (previewReason?.includes('xử lý') || previewReason?.includes('khởi tạo')) {
-        setPreviewReason(null);
-        void openPreview(activeFile);
-      }
+    if (!activeFile) return;
+    const prevStatus = prevPreviewStatusRef.current;
+    prevPreviewStatusRef.current = activeFile.previewStatus;
+
+    if (
+      prevStatus &&
+      (prevStatus === 'queued' || prevStatus === 'processing') &&
+      activeFile.previewStatus === 'ready' &&
+      !previewUrl
+    ) {
+      setPreviewReason(null);
+      void openPreview(activeFile, true);
     }
-  }, [activeFile, previewReason, openPreview]);
+  }, [activeFile, previewUrl, openPreview]);
 
   const copyText = useCallback(async () => {
     if (!textContent) return;
@@ -550,7 +566,7 @@ export function DocumentDetailPage() {
                             size="sm"
                             onClick={() => {
                               setPreviewReason(null);
-                              void openPreview(activeFile);
+                              void openPreview(activeFile, true);
                             }}
                             isLoading={previewLoading}
                           >

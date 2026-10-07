@@ -67,7 +67,8 @@ export function PdfViewer({
       enableXfa: true,
       disableAutoFetch: true,
       disableStream: false,
-      rangeChunkSize: 131072,
+      // 512KB chunk size (524288) provides fast initial page fetch while avoiding dozens of 128KB roundtrips
+      rangeChunkSize: 524288,
     });
 
     loadingTask.promise
@@ -128,8 +129,8 @@ export function PdfViewer({
 
         const viewport = page.getViewport({ scale: effectiveScale, rotation });
 
-        // Handle high DPI (Retina/mobile) displays for crisp text without memory exhaustion
-        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5));
+        // Handle high DPI (Retina/mobile) displays capped at 2.0 to save memory and render fast
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.0));
         canvas.width = Math.floor(viewport.width * dpr);
         canvas.height = Math.floor(viewport.height * dpr);
         canvas.style.width = `${Math.floor(viewport.width)}px`;
@@ -168,16 +169,19 @@ export function PdfViewer({
     }
   }, [pdfDoc, currentPage, renderPage, numPages]);
 
-  // Preload next pages (1-2-3...) in background so switching is instant with 0 delay
+  // Preload next page ONLY when active page is done rendering and viewer is idle
+  // This prevents background preload requests from competing with and delaying the active page
   useEffect(() => {
-    if (!pdfDoc || numPages <= 1) return;
-    const nextPages = [currentPage + 1, currentPage + 2, currentPage + 3].filter(
-      (p) => p <= numPages && p >= 1,
-    );
-    for (const p of nextPages) {
-      void pdfDoc.getPage(p).catch(() => undefined);
-    }
-  }, [pdfDoc, currentPage, numPages]);
+    if (!pdfDoc || numPages <= 1 || loading || pageRendering) return;
+    const nextPage = currentPage + 1;
+    if (nextPage > numPages) return;
+
+    const timer = setTimeout(() => {
+      void pdfDoc.getPage(nextPage).catch(() => undefined);
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [pdfDoc, currentPage, numPages, loading, pageRendering]);
 
   // Responsive re-render on window resize / orientation change
   useEffect(() => {

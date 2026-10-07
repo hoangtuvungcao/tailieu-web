@@ -748,11 +748,27 @@ export async function getPreview(
   }
 
   if (descriptor.kind === 'office' && descriptor.conversion === 'failed') {
+    // Self-heal / retry: re-enqueue preview job so worker converts it again
+    await db
+      .update(documentFiles)
+      .set({ previewStatus: 'queued', previewError: null })
+      .where(eq(documentFiles.id, file.id))
+      .catch(() => undefined);
+
+    await enqueuePreview({
+      fileId: file.id,
+      documentId,
+      bucket: file.bucket,
+      objectKey: file.objectKey,
+      originalName: file.originalName,
+      detectedMime,
+    }, { force: true }).catch(() => undefined);
+
     return {
       ...base,
       url: null,
       expiresInSeconds: null,
-      reason: 'Không thể tạo bản xem trước cho tệp này. Vui lòng tải tệp về máy.',
+      reason: 'Đang thử tạo lại bản xem trước cho tệp này. Vui lòng đợi trong giây lát...',
     };
   }
 
