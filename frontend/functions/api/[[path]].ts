@@ -182,7 +182,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const suffix = Array.isArray(segments) ? segments.join('/') : (segments ?? '');
 
   // Serve Captcha instantly at Cloudflare Edge (<10ms) without hitting remote VPS or returning 404
-  if (request.method === 'GET' && suffix === 'v1/auth/captcha') {
+  if (['GET', 'HEAD'].includes(request.method) && suffix === 'v1/auth/captcha') {
     const CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     let text = '';
     for (let i = 0; i < 4; i++) {
