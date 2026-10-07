@@ -910,7 +910,12 @@ export async function getPreview(
   // For native PDF files, also check if rasterized page images are available or can be generated
   let pageCount = file.pageCount;
   if (descriptor.kind === 'pdf') {
-    if ((!pageCount || pageCount === 0) && (await isRasterizerAvailable())) {
+    const page1Key = buildDerivedKey(file.objectKey, 'page1', 'jpg');
+    const page1Exists = await storage
+      .objectExists({ bucket: file.bucket || env.S3_BUCKET, key: page1Key })
+      .catch(() => false);
+
+    if ((!page1Exists || !pageCount) && (await isRasterizerAvailable())) {
       await convertFileDirectly(file.id).catch(() => undefined);
       const [refreshed] = await db
         .select({ pageCount: documentFiles.pageCount })
