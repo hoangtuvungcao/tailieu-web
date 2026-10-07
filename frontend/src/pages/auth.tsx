@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { BookOpen, CheckCircle2, Compass, KeyRound, Mail } from 'lucide-react';
-import { useState } from 'react';
+import { BookOpen, CheckCircle2, Compass, KeyRound, Loader2, Mail } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -588,6 +588,83 @@ export function ResetPasswordPage() {
             Lưu mật khẩu mới
           </Button>
         </form>
+      )}
+    </AuthShell>
+  );
+}
+
+export function VerifyEmailPage() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setLoading(false);
+      setError('Mã xác thực không hợp lệ hoặc thiếu.');
+      return;
+    }
+    api
+      .post('/auth/email/verify', { token })
+      .then(() => {
+        setSuccess(true);
+      })
+      .catch((err) => {
+        if (err instanceof ApiError) {
+          setError(err.message);
+        } else {
+          setError('Không thể xác thực email. Liên kết có thể đã hết hạn.');
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [token]);
+
+  return (
+    <AuthShell
+      title="Xác thực Email"
+      subtitle="Kích hoạt và xác thực địa chỉ email của bạn"
+      icon={CheckCircle2}
+      footer={
+        <Link to="/login" className="font-medium text-[var(--color-primary)] hover:underline">
+          Đăng nhập vào tài khoản
+        </Link>
+      }
+    >
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
+          <p className="text-sm text-[var(--color-muted-foreground)]">Đang xác thực email của bạn...</p>
+        </div>
+      ) : success ? (
+        <div className="flex flex-col items-center gap-4 py-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10 text-green-600">
+            <CheckCircle2 className="h-6 w-6" />
+          </div>
+          <h3 className="text-base font-semibold text-[var(--color-foreground)]">
+            Xác thực email thành công!
+          </h3>
+          <p className="text-sm text-[var(--color-foreground-muted)] max-w-sm">
+            Tài khoản của bạn đã được kích hoạt đầy đủ. Bạn có thể đăng nhập ngay bây giờ.
+          </p>
+          <div className="mt-4">
+            <Link to="/login">
+              <Button variant="default">Đăng nhập ngay</Button>
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="py-4 text-center">
+          <p className="text-sm text-[var(--color-destructive)] mb-4">
+            {error || 'Xác thực email không thành công.'}
+          </p>
+          <Link to="/login">
+            <Button variant="outline">Về trang đăng nhập</Button>
+          </Link>
+        </div>
       )}
     </AuthShell>
   );

@@ -216,9 +216,10 @@ const envSchema = z
     SEED_STUDENT_EMAIL: z.string().email().default('student@tailieu.local'),
     SEED_STUDENT_PASSWORD: z.string().min(8).default(DEFAULT_SEED_PASSWORDS.student),
 
-    // Cloudflare
+    // Cloudflare & Frontend URLs
     TUNNEL_HOSTNAME: z.string().optional().default(''),
     CLOUDFLARE_PUBLIC_URL: z.string().optional().default(''),
+    FRONTEND_URL: z.string().optional().default(''),
 
     CONVERTER_CONCURRENCY: intFromEnv(1, 1),
     CONVERT_TIMEOUT_MS: intFromEnv(120_000, 1000),
@@ -364,3 +365,14 @@ export const durations = {
   uploadSessionMs: env.UPLOAD_SESSION_TTL_HOURS * 60 * 60 * 1000,
   signedUrlMs: env.S3_SIGNED_URL_TTL_SECONDS * 1000,
 } as const;
+
+/** Get the public Frontend URL (e.g. https://tailieu-ttn.pages.dev) for email links */
+export function getFrontendUrl(): string {
+  if (env.FRONTEND_URL) return env.FRONTEND_URL.replace(/\/+$/, '');
+  const pages = env.CORS_ORIGINS.find((o) => o.includes('pages.dev'));
+  if (pages) return pages.replace(/\/+$/, '');
+  if (env.CLOUDFLARE_PUBLIC_URL && !env.CLOUDFLARE_PUBLIC_URL.includes(env.API_HOST)) {
+    return env.CLOUDFLARE_PUBLIC_URL.replace(/\/+$/, '');
+  }
+  return 'https://tailieu-ttn.pages.dev';
+}

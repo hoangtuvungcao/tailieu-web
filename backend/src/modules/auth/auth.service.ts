@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import { DEFAULT_ROLE } from '../../config/permissions.js';
-import { durations, env } from '../../config/env.js';
+import { durations, env, getFrontendUrl } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { sessions, users } from '../../db/schema/index.js';
 import { recordAudit } from '../../lib/audit.js';
@@ -563,7 +563,7 @@ export async function sendVerificationEmail(
     });
   });
 
-  const link = `${env.CLOUDFLARE_PUBLIC_URL || env.API_PUBLIC_URL}/verify-email?token=${token.raw}`;
+  const link = `${getFrontendUrl()}/verify-email?token=${token.raw}`;
 
   await getMailer().send({
     to: email,
@@ -635,7 +635,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
     });
   });
 
-  const link = `${env.CLOUDFLARE_PUBLIC_URL || env.API_PUBLIC_URL}/reset-password?token=${token.raw}`;
+  const link = `${getFrontendUrl()}/reset-password?token=${token.raw}`;
 
   await getMailer().send({
     to: user.email,

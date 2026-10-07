@@ -42,6 +42,7 @@ import {
   NotFoundPage,
   RegisterPage,
   ResetPasswordPage,
+  VerifyEmailPage,
 } from '@/pages/auth';
 
 // Code-split: the admin screens and their chart code are fetched only when an
@@ -570,6 +571,7 @@ export function App() {
         <Route path="register" element={<RegisterPage />} />
         <Route path="forgot-password" element={<ForgotPasswordPage />} />
         <Route path="reset-password" element={<ResetPasswordPage />} />
+        <Route path="verify-email" element={<VerifyEmailPage />} />
         <Route
           path="upload"
           element={

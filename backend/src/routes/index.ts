@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 
+import { getFrontendUrl } from '../config/env.js';
 import { adminRoutes } from '../modules/admin/admin.route.js';
 import { authRoutes } from '../modules/auth/auth.route.js';
 import { healthRoutes } from '../modules/health/health.route.js';
@@ -35,6 +36,21 @@ import { uploadRoutes } from '../modules/uploads/upload.route.js';
  *                    change can ship as /api/v2 while old clients keep working.
  */
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
+  // If user opens root or UI paths on the API domain directly, redirect them to the Frontend SPA
+  app.get('/reset-password', async (request, reply) => {
+    const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '';
+    return reply.redirect(`${getFrontendUrl()}/reset-password${query}`, 302);
+  });
+
+  app.get('/verify-email', async (request, reply) => {
+    const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : '';
+    return reply.redirect(`${getFrontendUrl()}/verify-email${query}`, 302);
+  });
+
+  app.get('/', async (_request, reply) => {
+    return reply.redirect(getFrontendUrl(), 302);
+  });
+
   await app.register(healthRoutes, { prefix: '/api/health' });
 
   await app.register(
