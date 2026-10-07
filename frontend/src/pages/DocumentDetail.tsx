@@ -10,6 +10,7 @@ import {
   Star,
   Trash2,
   TriangleAlert,
+  Volume2,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -103,14 +104,6 @@ export function DocumentDetailPage() {
   const primaryFile = document?.files?.find((file) => file.isPrimary) ?? document?.files?.[0];
   const activeFile = document?.files?.find((file) => file.id === activeFileId) ?? primaryFile;
 
-  useEffect(() => {
-    if (
-      activeFile?.previewStatus === 'ready' &&
-      (previewReason?.includes('xử lý') || previewReason?.includes('khởi tạo'))
-    ) {
-      setPreviewReason(null);
-    }
-  }, [activeFile?.previewStatus, previewReason]);
 
   // A shared document link is the one URL on this site that people paste into
   // chat, so its preview matters more here than anywhere else: the title, the
@@ -180,6 +173,29 @@ export function DocumentDetailPage() {
     setImageError(false);
   }
 
+  const isOfficeKind = (kind: string | undefined): boolean =>
+    Boolean(
+      kind &&
+        [
+          'docx',
+          'pptx',
+          'xlsx',
+          'doc',
+          'ppt',
+          'xls',
+          'odt',
+          'ods',
+          'odp',
+        ].includes(kind),
+    );
+
+  const canPreviewInline = Boolean(
+    activeFile &&
+      (['pdf', 'image', 'text', 'code', 'audio', 'video'].includes(activeFile.fileKind) ||
+        isOfficeKind(activeFile.fileKind) ||
+        activeFile.previewStatus === 'ready'),
+  );
+
   async function openPreview(target: DocumentFile) {
     if (!id) return;
     setPreviewLoading(true);
@@ -191,7 +207,12 @@ export function DocumentDetailPage() {
         `/documents/${id}/preview?fileId=${target.id}`,
       );
       if (result.url) {
-        if (target.fileKind === 'pdf' || target.previewStatus === 'ready') {
+        const isPdfStream =
+          target.fileKind === 'pdf' ||
+          isOfficeKind(target.fileKind) ||
+          target.previewStatus === 'ready';
+
+        if (isPdfStream) {
           // Probe 1 byte to ensure the PDF stream is reachable and does not 500/404
           try {
             const probe = await fetch(result.url, {
@@ -239,6 +260,28 @@ export function DocumentDetailPage() {
     }
   }
 
+  // Auto-open preview when file is viewable or ready
+  useEffect(() => {
+    if (activeFile && !previewUrl && !previewLoading && !previewReason) {
+      if (
+        ['pdf', 'image', 'text', 'code', 'audio', 'video'].includes(activeFile.fileKind) ||
+        activeFile.previewStatus === 'ready'
+      ) {
+        void openPreview(activeFile);
+      }
+    }
+  }, [activeFile?.id, activeFile?.previewStatus]);
+
+  // When an office document finishes conversion, automatically load preview
+  useEffect(() => {
+    if (activeFile?.previewStatus === 'ready') {
+      if (previewReason?.includes('xử lý') || previewReason?.includes('khởi tạo')) {
+        setPreviewReason(null);
+        void openPreview(activeFile);
+      }
+    }
+  }, [activeFile?.previewStatus, previewReason]);
+
   async function copyText() {
     if (!textContent) return;
     try {
@@ -249,11 +292,6 @@ export function DocumentDetailPage() {
       // ignore
     }
   }
-
-  const canPreviewInline =
-    activeFile &&
-    (['pdf', 'image', 'text', 'code'].includes(activeFile.fileKind) ||
-      activeFile.previewStatus === 'ready');
 
   return (
     <div className="container-page py-8">
@@ -317,8 +355,13 @@ export function DocumentDetailPage() {
 
           {/* --- Preview ---------------------------------------------------- */}
           <div className="mt-6">
-            {previewUrl &&
-            (activeFile?.fileKind === 'pdf' || activeFile?.previewStatus === 'ready') ? (
+            {Boolean(
+              previewUrl &&
+                (activeFile?.fileKind === 'pdf' ||
+                  isOfficeKind(activeFile?.fileKind) ||
+                  activeFile?.previewStatus === 'ready' ||
+                  !['image', 'text', 'code', 'audio', 'video'].includes(activeFile?.fileKind ?? '')),
+            ) ? (
               <div className="space-y-3">
                 {!isMobileDevice && (
                   <div className="flex items-center justify-between text-xs text-[var(--color-foreground-muted)] px-1">
@@ -356,7 +399,7 @@ export function DocumentDetailPage() {
 
                 {isMobileDevice || viewerMode === 'inApp' ? (
                   <PdfViewer
-                    url={previewUrl}
+                    url={previewUrl!}
                     fileName={activeFile?.originalName}
                     onDownload={() => {
                       if (activeFile) {
@@ -370,13 +413,13 @@ export function DocumentDetailPage() {
                   />
                 ) : (
                   <object
-                    data={previewUrl}
+                    data={previewUrl!}
                     type="application/pdf"
                     className="h-[75vh] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xs"
                     aria-label={`Xem trước ${activeFile?.originalName}`}
                   >
                     <PdfViewer
-                      url={previewUrl}
+                      url={previewUrl!}
                       fileName={activeFile?.originalName}
                       onDownload={() => {
                         if (activeFile) {
@@ -410,7 +453,7 @@ export function DocumentDetailPage() {
                     <img
                       src={previewUrl}
                       alt={activeFile.originalName}
-                      className="mx-auto max-h-[70vh] rounded-lg border border-[var(--color-border)] object-contain shadow-sm"
+                      className="mx-auto max-h-[70vh] max-w-full rounded-lg border border-[var(--color-border)] object-contain shadow-sm"
                       onError={() => setImageError(true)}
                     />
                     <div className="mt-3 flex gap-3 text-xs">
@@ -481,53 +524,87 @@ export function DocumentDetailPage() {
                   </pre>
                 )}
               </div>
+            ) : previewUrl && activeFile?.fileKind === 'audio' ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] p-6 shadow-xs">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 mb-4 shadow-xs">
+                  <Volume2 className="h-8 w-8" />
+                </div>
+                <h4 className="text-sm font-semibold text-[var(--color-foreground)] mb-4 text-center max-w-md truncate">
+                  {activeFile.originalName}
+                </h4>
+                <audio controls className="w-full max-w-md" src={previewUrl}>
+                  Trình duyệt không hỗ trợ phát âm thanh trực tiếp.
+                </audio>
+              </div>
+            ) : previewUrl && activeFile?.fileKind === 'video' ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-[var(--color-border)] bg-black/90 p-2 sm:p-4 shadow-xs overflow-hidden">
+                <video
+                  controls
+                  playsInline
+                  className="max-h-[70vh] w-full rounded-lg object-contain"
+                  src={previewUrl}
+                >
+                  Trình duyệt không hỗ trợ phát video trực tiếp.
+                </video>
+              </div>
             ) : (
               <Card>
-                <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
-                  <FileText className="h-10 w-10 text-[var(--color-muted-foreground)]" aria-hidden />
-                  <p className="text-sm text-[var(--color-muted-foreground)] max-w-md">
-                    {previewReason ??
-                      (canPreviewInline
-                        ? 'Nhấn để xem trước tài liệu ngay trong trình duyệt.'
-                        : activeFile?.previewStatus === 'queued' ||
-                            activeFile?.previewStatus === 'processing'
-                          ? 'Tài liệu đang được xử lý để xem trước. Bạn có thể tải xuống ngay bây giờ.'
-                          : 'Định dạng này cần tải xuống để xem. Vui lòng tải tệp về máy.')}
-                  </p>
-                  {previewReason && activeFile ? (
-                    <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setPreviewReason(null);
-                          void openPreview(activeFile);
-                        }}
-                        isLoading={previewLoading}
-                      >
-                        Thử lại
-                      </Button>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() =>
-                          void download.mutateAsync({
-                            documentId: document.id,
-                            fileId: activeFile.id,
-                          })
-                        }
-                        isLoading={download.isPending}
-                      >
-                        <Download className="h-4 w-4" />
-                        Tải tệp về máy
-                      </Button>
+                <CardContent className="flex flex-col items-center gap-3 p-8 sm:p-10 text-center">
+                  {activeFile?.previewStatus === 'queued' || activeFile?.previewStatus === 'processing' ? (
+                    <div className="flex flex-col items-center gap-3 my-2">
+                      <Spinner className="h-8 w-8 text-[var(--color-primary)]" />
+                      <p className="text-sm font-semibold text-[var(--color-foreground)]">
+                        {previewReason ?? 'Đang tự động chuyển đổi tài liệu để xem trước...'}
+                      </p>
+                      <p className="text-xs text-[var(--color-foreground-muted)] max-w-sm">
+                        Hệ thống đang chuẩn bị bản xem trước hiển thị trực tiếp trên thiết bị của bạn. Vui lòng đợi trong giây lát...
+                      </p>
                     </div>
-                  ) : canPreviewInline && !previewReason && activeFile ? (
-                    <Button onClick={() => void openPreview(activeFile)} isLoading={previewLoading}>
-                      Xem trước
-                    </Button>
-                  ) : null}
+                  ) : (
+                    <>
+                      <FileText className="h-10 w-10 text-[var(--color-muted-foreground)]" aria-hidden />
+                      <p className="text-sm text-[var(--color-muted-foreground)] max-w-md">
+                        {previewReason ??
+                          (canPreviewInline
+                            ? 'Nhấn để xem trước tài liệu ngay trong trình duyệt.'
+                            : 'Định dạng này cần tải xuống để xem. Vui lòng tải tệp về máy.')}
+                      </p>
+                      {previewReason && activeFile ? (
+                        <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setPreviewReason(null);
+                              void openPreview(activeFile);
+                            }}
+                            isLoading={previewLoading}
+                          >
+                            Thử lại
+                          </Button>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() =>
+                              void download.mutateAsync({
+                                documentId: document.id,
+                                fileId: activeFile.id,
+                              })
+                            }
+                            isLoading={download.isPending}
+                          >
+                            <Download className="h-4 w-4" />
+                            Tải tệp về máy
+                          </Button>
+                        </div>
+                      ) : canPreviewInline && !previewReason && activeFile ? (
+                        <Button onClick={() => void openPreview(activeFile)} isLoading={previewLoading}>
+                          Xem trước
+                        </Button>
+                      ) : null}
+                    </>
+                  )}
                 </CardContent>
               </Card>
             )}
