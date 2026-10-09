@@ -8,14 +8,14 @@ import { isPrivate, routeDefault } from './seo';
  * The failure these lock in is a silent one. A prefix in `PREFIX_DEFAULTS` that
  * no longer matches a real route does not error — the page keeps the homepage's
  * title and description, and the only symptom is that search engines index
- * every post as "TAILIEU TTN — Kho tri thức Đại học Tây Nguyên". That happened:
+ * every post as "Tài Liệu Sinh Viên — Kho tri thức & học tập cộng đồng". That happened:
  * the post route is `/community/:id` and the table said `/posts/`.
  *
  * So the assertion is not "this string is present" but "the routes the app
  * actually has resolve to their own metadata".
  */
 
-const SITE_NAME = 'TAILIEU TTN';
+const SITE_NAME = 'Tài Liệu Sinh Viên';
 
 describe('routeDefault', () => {
   it('gives each static page its own title', () => {

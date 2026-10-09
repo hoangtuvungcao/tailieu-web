@@ -237,30 +237,30 @@ const OG_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 
     <rect x="0" y="0" width="410" height="38" rx="19" fill="#0f5132" stroke="#fbbf24" stroke-width="1.2" opacity="0.9" />
     <circle cx="20" cy="19" r="6" fill="#fbbf24" />
     <text x="36" y="24" fill="#fef08a" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" letter-spacing="1.5">
-      TRƯỜNG ĐẠI HỌC TÂY NGUYÊN
+      CỘNG ĐỒNG HỌC TẬP SINH VIÊN
     </text>
 
     <!-- Main Title -->
-    <text x="0" y="115" font-family="system-ui, -apple-system, sans-serif" font-size="68" font-weight="900" letter-spacing="2">
-      <tspan fill="#ffffff">TAILIEU </tspan>
-      <tspan fill="url(#og-gold-text)">TTN</tspan>
+    <text x="0" y="115" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="900" letter-spacing="2">
+      <tspan fill="#ffffff">TÀI LIỆU </tspan>
+      <tspan fill="url(#og-gold-text)">SINH VIÊN</tspan>
     </text>
 
     <!-- Subtitle -->
     <text x="0" y="165" fill="#a7f3d0" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="600">
-      Kho Tri Thức Học Thuật &amp; Đề Thi Sinh Viên
+      Kho Tri Thức Học Thuật &amp; Ghi Chép Sinh Viên
     </text>
 
     <!-- Features / Highlights -->
     <text x="0" y="215" fill="#cbd5e1" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="400">
-      Chia sẻ tài liệu • Khám phá đề thi • Bài giảng chất lượng cao
+      Chia sẻ ghi chép • Đề cương tóm tắt • Tự học phi lợi nhuận
     </text>
 
     <!-- Website link badge -->
     <g transform="translate(0, 255)">
-      <rect x="0" y="0" width="300" height="42" rx="12" fill="#022119" stroke="#34d399" stroke-width="1.2" opacity="0.85" />
+      <rect x="0" y="0" width="340" height="42" rx="12" fill="#022119" stroke="#34d399" stroke-width="1.2" opacity="0.85" />
       <text x="24" y="27" fill="#6ee7b7" font-family="monospace" font-size="18" font-weight="700">
-        tailieu-ttn.pages.dev
+        tailieusinhvien.pages.dev
       </text>
     </g>
   </g>

@@ -260,7 +260,7 @@ export function RegisterPage() {
   return (
     <AuthShell
       title="Tạo tài khoản"
-      subtitle="Tham gia cộng đồng học thuật Đại học Tây Nguyên"
+      subtitle="Tham gia cộng đồng học thuật sinh viên"
       footer={
         <>
           Đã có tài khoản?{' '}

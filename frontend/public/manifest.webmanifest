@@ -1,7 +1,7 @@
 {
-  "name": "Tài liệu TTN — Kho tài liệu Đại học Tây Nguyên",
-  "short_name": "Tài liệu TTN",
-  "description": "Kho tài liệu học thuật và cộng đồng tri thức của Trường Đại học Tây Nguyên: tìm kiếm, chia sẻ, bình luận và lưu trữ tài liệu học tập.",
+  "name": "Tài Liệu Sinh Viên — Nền tảng học tập cộng đồng",
+  "short_name": "Tài Liệu Sinh Viên",
+  "description": "Nền tảng chia sẻ ghi chép, tài liệu học thuật và cộng đồng học tập sinh viên phi lợi nhuận.",
   "lang": "vi",
   "dir": "ltr",
   "start_url": "/",

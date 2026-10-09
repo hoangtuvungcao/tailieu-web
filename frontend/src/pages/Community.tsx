@@ -79,7 +79,7 @@ export function CommunityPage() {
       <div className="mx-auto max-w-2xl">
         <h1 className="text-2xl font-bold tracking-tight">Cộng đồng</h1>
         <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
-          Chia sẻ, hỏi đáp và thảo luận cùng sinh viên Đại học Tây Nguyên.
+          Chia sẻ, hỏi đáp và thảo luận cùng cộng đồng sinh viên.
         </p>
 
         {isAuthenticated ? <Composer /> : (

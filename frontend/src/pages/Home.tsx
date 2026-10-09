@@ -35,10 +35,10 @@ export function HomePage() {
       {/* --- Hero ---------------------------------------------------------- */}
       <section className="mx-auto max-w-3xl text-center">
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-          Kho tri thức Đại học Tây Nguyên
+          Tài Liệu Sinh Viên
         </h1>
         <p className="mt-3 text-[var(--color-muted-foreground)]">
-          Chia sẻ • Khám phá • Học tập • Kết nối
+          Nền tảng chia sẻ học tập & kết nối sinh viên phi lợi nhuận
         </p>
 
         <form onSubmit={submitSearch} className="mt-8" role="search">
@@ -54,7 +54,7 @@ export function HomePage() {
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tìm bài giảng, đề thi, giáo trình, học phần…"
+                placeholder="Tìm ghi chép, đề cương, bài tập, học phần…"
                 aria-label="Tìm kiếm tài liệu"
                 className="h-12 pl-10 text-base"
               />

@@ -69,8 +69,8 @@ export function ProfilePage() {
   const profileUser = profile.data;
   useSeo({
     title: profileUser
-      ? `${profileUser.displayName}${profileUser.username ? ` (@${profileUser.username})` : ''} — TAILIEU TTN`
-      : 'Hồ sơ — TAILIEU TTN',
+      ? `${profileUser.displayName}${profileUser.username ? ` (@${profileUser.username})` : ''} — Tài Liệu Sinh Viên`
+      : 'Hồ sơ — Tài Liệu Sinh Viên',
     // The bio is the only prose a profile has, so it is the description when
     // present rather than a generated sentence about the account.
     description: profileUser?.bio ?? undefined,

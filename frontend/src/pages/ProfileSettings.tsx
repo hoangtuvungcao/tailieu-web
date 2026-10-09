@@ -58,7 +58,7 @@ export function ProfileSettingsPage() {
   const { user, applyUser } = useAuth();
   const queryClient = useQueryClient();
 
-  useSeo({ title: 'Chỉnh sửa hồ sơ — TAILIEU TTN', noIndex: true });
+  useSeo({ title: 'Chỉnh sửa hồ sơ — Tài Liệu Sinh Viên', noIndex: true });
 
   /** One place to record a write's result, so both halves stay in step. */
   const acceptUpdate = (next: CurrentUser) => {

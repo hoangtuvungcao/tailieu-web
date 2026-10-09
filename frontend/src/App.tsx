@@ -370,12 +370,12 @@ function Footer() {
   return (
     <footer className="mt-16 border-t border-[var(--color-border)] py-8">
       <div className="container-page flex flex-col items-center justify-center gap-3 text-center text-sm text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:justify-between sm:text-left">
-        <p className="flex items-center justify-center gap-2 sm:justify-start">
+        <p className="flex items-center justify-center gap-2 sm:justify-start font-medium text-[var(--color-foreground)]">
           <LogoMark className="h-6 w-6" decorative />
-          <span>TAILIEU TTN — Kho tri thức cộng đồng Đại học Tây Nguyên</span>
+          <span>Tài Liệu Sinh Viên — Nền tảng học tập cộng đồng</span>
         </p>
-        <p className="text-xs">
-          Nền tảng không thay thế cho các nguồn tài liệu chính thức của nhà trường.
+        <p className="max-w-md text-xs leading-relaxed text-[var(--color-muted-foreground)]">
+          Dự án học thuật mở do cộng đồng sinh viên phát triển phục vụ mục đích tự học phi lợi nhuận. Website không trực thuộc và không đại diện cho bất kỳ cơ sở giáo dục nào.
         </p>
       </div>
     </footer>

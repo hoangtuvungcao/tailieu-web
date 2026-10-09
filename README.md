@@ -1,9 +1,8 @@
-# TAILIEU TTN
+# TÀI LIỆU SINH VIÊN
 
-Nền tảng chia sẻ tài liệu học tập và cộng đồng học thuật cho **Đại học Tây Nguyên**.
+Nền tảng chia sẻ học tập mở và cộng đồng tri thức sinh viên phi lợi nhuận.
 
-Kho tri thức số: tài liệu, đề thi, bài giảng, giáo trình — được tổ chức theo khoa,
-ngành, học phần và học kỳ, kèm tìm kiếm tiếng Việt, xem trước tài liệu, và kiểm duyệt.
+Kho tri thức số: ghi chép học tập, đề cương tóm tắt, sơ đồ tư duy, bài tập tham khảo — được tổ chức theo khoa, ngành, học phần và học kỳ, kèm tìm kiếm tiếng Việt, xem trước tài liệu, và kiểm duyệt nội dung.
 
 ---
 

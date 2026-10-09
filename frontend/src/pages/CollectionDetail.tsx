@@ -398,7 +398,7 @@ function AddItemForm({ collectionId }: { collectionId: string }) {
   const parsed = parseTargetUrl(url);
   const error =
     url.length > 0 && !parsed
-      ? 'Dán liên kết tới một tài liệu, bài viết hoặc bộ sưu tập trên TAILIEU TTN.'
+      ? 'Dán liên kết tới một tài liệu, bài viết hoặc bộ sưu tập trên Tài Liệu Sinh Viên.'
       : null;
 
   if (add.isSuccess && url.length === 0) {

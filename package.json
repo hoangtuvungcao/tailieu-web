@@ -1,8 +1,8 @@
 {
-  "name": "tailieu-ttn",
+  "name": "tailieu-sinhvien",
   "version": "0.1.0",
   "private": true,
-  "description": "TAILIEU TTN \u2014 Academic knowledge platform for Tay Nguyen University",
+  "description": "Tài Liệu Sinh Viên — Open academic knowledge platform for students",
   "workspaces": [
     "backend",
     "frontend"

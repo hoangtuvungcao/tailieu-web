@@ -77,8 +77,8 @@ export function PostDetailPage() {
   const postData = post.data;
   useSeo({
     title: postData
-      ? `${postData.title ?? firstLine(postData.body)} — TAILIEU TTN`
-      : 'Bài đăng — TAILIEU TTN',
+      ? `${postData.title ?? firstLine(postData.body)} — Tài Liệu Sinh Viên`
+      : 'Bài đăng — Tài Liệu Sinh Viên',
     description: postData ? firstLine(postData.body, 160) : undefined,
     type: 'article',
     jsonLd: postData

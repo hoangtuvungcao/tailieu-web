@@ -47,26 +47,26 @@ export interface SeoMeta {
   noIndex?: boolean;
 }
 
-const SITE_NAME = 'TAILIEU TTN';
+const SITE_NAME = 'Tài Liệu Sinh Viên';
 const DEFAULT_DESCRIPTION =
-  'Nền tảng chia sẻ tài liệu học tập, đề thi, bài giảng và kết nối cộng đồng học thuật Đại học Tây Nguyên.';
+  'Nền tảng chia sẻ ghi chép, tài liệu học tập và kết nối cộng đồng học thuật sinh viên phi lợi nhuận.';
 const DEFAULT_IMAGE = '/og-image.png';
 
 /** Title/description for a path, before any page-level override. */
 const ROUTE_DEFAULTS: Record<string, { title: string; description?: string }> = {
-  '/': { title: `${SITE_NAME} — Kho tri thức Đại học Tây Nguyên` },
+  '/': { title: `${SITE_NAME} — Kho tri thức & học tập cộng đồng` },
   '/documents': {
     title: `Tài liệu — ${SITE_NAME}`,
     description:
-      'Tìm kiếm và tải tài liệu, đề thi, bài giảng theo khoa, ngành, học phần và năm học.',
+      'Tìm kiếm và chia sẻ ghi chép, đề cương, bài tập theo khoa, ngành, học phần.',
   },
   '/community': {
     title: `Cộng đồng — ${SITE_NAME}`,
-    description: 'Hỏi đáp, chia sẻ và thảo luận học thuật cùng sinh viên Đại học Tây Nguyên.',
+    description: 'Hỏi đáp, chia sẻ và thảo luận học thuật cùng cộng đồng sinh viên.',
   },
   '/leaderboards': {
     title: `Bảng xếp hạng — ${SITE_NAME}`,
-    description: 'Những thành viên đóng góp nhiều nhất cho kho tài liệu.',
+    description: 'Những thành viên đóng góp nhiều nhất cho kho tài liệu học tập.',
   },
   '/login': { title: `Đăng nhập — ${SITE_NAME}`, description: undefined },
   '/register': {
@@ -117,7 +117,7 @@ export function routeDefault(title: string): SeoMeta {
   if (prefixed) return { title: prefixed.title };
 
   return {
-    title: `${SITE_NAME} — Kho tri thức Đại học Tây Nguyên`,
+    title: `${SITE_NAME} — Kho tri thức & học tập cộng đồng`,
     description: DEFAULT_DESCRIPTION,
   };
 }

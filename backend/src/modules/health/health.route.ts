@@ -34,7 +34,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/', async (_request, reply) => {
     return reply.ok({
       status: 'ok',
-      service: 'tailieu-ttn-api',
+      service: 'tailieu-sinhvien-api',
       version: process.env.npm_package_version ?? '0.1.0',
       uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
       timestamp: new Date().toISOString(),

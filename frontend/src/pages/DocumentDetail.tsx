@@ -265,7 +265,7 @@ export function DocumentDetailPage() {
   // content. The values are absent while the request is in flight, and the
   // route default covers that window.
   useSeo({
-    title: document ? `${document.title} — TAILIEU TTN` : 'Tài liệu — TAILIEU TTN',
+    title: document ? `${document.title} — Tài Liệu Sinh Viên` : 'Tài liệu — Tài Liệu Sinh Viên',
     description: document?.description ?? undefined,
     type: 'article',
     jsonLd: document
@@ -279,7 +279,7 @@ export function DocumentDetailPage() {
           educationalLevel: document.taxonomy.academicYear?.name ?? undefined,
           about: document.taxonomy.subject?.name ?? undefined,
           learningResourceType: document.taxonomy.documentType?.name ?? undefined,
-          provider: { '@type': 'CollegeOrUniversity', name: 'Đại học Tây Nguyên' },
+          provider: { '@type': 'Organization', name: 'Tài Liệu Sinh Viên' },
           // Interaction counts, not ratings: `ratingAverage` is null until
           // somebody rates, and emitting `aggregateRating` with no ratings is
           // the kind of markup that gets a site penalised.

@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
  * - Emerald crystal 3D squircle base with specular light reflections
  * - Chamfered metallic gold bevel rim
  * - Floating open 3D knowledge book with realistic page curves and soft drop shadows
- * - Central golden Central Highlands (Tây Nguyên) mountain crest with knowledge flame & emerald leaf
+ * - Central golden student academic graduation cap & star of knowledge
  */
 export function LogoMark({
   className,
@@ -30,7 +30,7 @@ export function LogoMark({
       className={cn('h-9 w-9 shrink-0 drop-shadow-sm', className)}
       role={decorative ? undefined : 'img'}
       aria-hidden={decorative ? true : undefined}
-      aria-label={decorative ? undefined : 'Tài liệu TTN'}
+      aria-label={decorative ? undefined : 'Tài Liệu Sinh Viên'}
     >
       <defs>
         {/* Base Plate Gradients (Emerald Crystal 3D) */}
@@ -186,57 +186,57 @@ export function LogoMark({
         opacity="0.75"
       />
 
-      {/* 3. CENTRAL EMBLEM: HIGHLANDS MOUNTAINS & KNOWLEDGE FLAME-LEAF (GOLD 3D) */}
+      {/* 3. CENTRAL EMBLEM: STUDENT ACADEMIC CAP & KNOWLEDGE STAR (GOLD 3D) */}
       <g filter={`url(#${uid}-shadow-emblem)`}>
-        {/* Mountain Silhouette Peak Behind (Tây Nguyên Crest) */}
+        {/* Cap Skull Base */}
         <path
-          d="M20 28 L27 18 L32 23.5 L37 16 L44 28"
-          fill="none"
-          stroke={`url(#${uid}-emblem-gold)`}
-          strokeWidth="2.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          d="M24 22.5 L24 26.5 C24 30.5 40 30.5 40 26.5 L40 22.5"
+          fill={`url(#${uid}-emblem-gold)`}
+          stroke="#78350f"
+          strokeWidth="0.8"
         />
+
+        {/* Mortarboard Rhombus (Top Diamond) */}
         <path
-          d="M27 18 L29 21 M37 16 L35 20"
+          d="M18 20 L32 13 L46 20 L32 27 Z"
+          fill={`url(#${uid}-emblem-gold)`}
+          stroke="#92400e"
+          strokeWidth="0.8"
+        />
+
+        {/* Rhombus Specular Bevel Highlight */}
+        <path
+          d="M19.5 19.8 L32 13.8 L44.5 19.8"
+          fill="none"
           stroke="#fffbeb"
           strokeWidth="1.2"
           strokeLinecap="round"
         />
 
-        {/* Right Side: Emerald Knowledge Leaf */}
+        {/* Center Button on Mortarboard */}
+        <circle cx="32" cy="20" r="1.6" fill="#fffbeb" />
+
+        {/* Tassel Ribbon hanging right */}
         <path
-          d="M32 38 C32 38 41 33 42 21 C36 22 33 27 32 31 Z"
-          fill={`url(#${uid}-leaf-emerald)`}
-        />
-        {/* Leaf Spine Highlight */}
-        <path
-          d="M32 38 C35 32 37 27 40 22.5"
+          d="M32 20 C38 21 44 24 45 28.5"
           fill="none"
-          stroke="#a7f3d0"
+          stroke="#fef08a"
           strokeWidth="1.1"
           strokeLinecap="round"
         />
-
-        {/* Center & Left Side: Golden Sacred Flame */}
-        <path
-          d="M32 38 C31 35 24 31 24 23 C24 18 28 15 30 13.5 C29.5 16 31 18 32.5 19 C34 16.5 33 13 32 10 C36 12 39 16 38 21 C37.5 23 36 24.5 35 26 C37 25 38.5 23 39 21 C39.5 28 34.5 34 32 38 Z"
+        {/* Tassel Brush End */}
+        <polygon
+          points="43.5,28.5 46.5,28.5 46,33 44,33"
           fill={`url(#${uid}-emblem-gold)`}
         />
 
-        {/* Specular Ridge on Gold Flame */}
+        {/* Knowledge Star / Wisdom Sparkle Above Cap */}
         <path
-          d="M30 14 C31.5 17 33 20 31.5 25 C30.5 28 28 30 26 31"
-          fill="none"
-          stroke="#fffbeb"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-          opacity="0.85"
+          d="M32 4 L32.8 7.2 L36 8 L32.8 8.8 L32 12 L31.2 8.8 L28 8 L31.2 7.2 Z"
+          fill="#fffbeb"
         />
-
-        {/* Star Core Sparkle */}
-        <circle cx="32" cy="10" r="1.4" fill="#ffffff" />
-        <circle cx="32" cy="10" r="2.8" fill="#fde047" opacity="0.45" />
+        <circle cx="32" cy="8" r="1.3" fill="#ffffff" />
+        <circle cx="32" cy="8" r="3" fill="#fde047" opacity="0.45" />
       </g>
     </svg>
   );
@@ -256,14 +256,14 @@ export function Logo({
     <span className={cn('flex items-center gap-2.5', className)}>
       <LogoMark decorative />
       <span className={cn('flex flex-col leading-tight', wordmarkClassName)}>
-        <span className="flex items-center gap-1 text-sm font-extrabold tracking-tight">
-          <span className="text-[var(--color-foreground)]">TAILIEU</span>
-          <span className="rounded bg-gradient-to-r from-amber-500 to-amber-600 px-1 py-0.2 text-[11px] font-black text-white shadow-xs">
-            TTN
+        <span className="flex items-center gap-1.5 text-sm font-extrabold tracking-tight">
+          <span className="text-[var(--color-foreground)]">TÀI LIỆU</span>
+          <span className="rounded bg-gradient-to-r from-blue-600 to-indigo-600 px-1.5 py-0.5 text-[10px] font-black text-white shadow-xs">
+            SINH VIÊN
           </span>
         </span>
         <span className="hidden text-[10px] font-medium tracking-wide text-[var(--color-muted-foreground)] sm:block">
-          Đại học Tây Nguyên
+          Cộng đồng học tập mở
         </span>
       </span>
     </span>

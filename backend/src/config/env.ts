@@ -149,15 +149,19 @@ const envSchema = z
     JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
     CSRF_SECRET: z.string().min(32, 'CSRF_SECRET must be at least 32 characters'),
     ARGON2_PEPPER: z.string().default(''),
-    JWT_ISSUER: z.string().default('tailieu-ttn'),
-    JWT_AUDIENCE: z.string().default('tailieu-ttn-web'),
+    JWT_ISSUER: z.string().default('tailieu-sinhvien'),
+    JWT_AUDIENCE: z.string().default('tailieu-sinhvien-web'),
     ACCESS_TOKEN_TTL: z.string().default('15m'),
     REFRESH_TOKEN_TTL_DAYS: intFromEnv(30, 1),
     SESSION_ABSOLUTE_TTL_DAYS: intFromEnv(90, 1),
     REFRESH_GRACE_MS: intFromEnv(10_000, 0),
 
     // CORS / cookies
-    CORS_ORIGINS: csvOrigins(['http://localhost:5173', 'https://tailieu-ttn.pages.dev']),
+    CORS_ORIGINS: csvOrigins([
+      'http://localhost:5173',
+      'https://tailieusinhvien.pages.dev',
+      'https://tailieu-ttn.pages.dev',
+    ]),
     COOKIE_DOMAIN: z.string().optional().default(''),
 
     // Uploads
@@ -366,7 +370,7 @@ export const durations = {
   signedUrlMs: env.S3_SIGNED_URL_TTL_SECONDS * 1000,
 } as const;
 
-/** Get the public Frontend URL (e.g. https://tailieu-ttn.pages.dev) for email links */
+/** Get the public Frontend URL (e.g. https://tailieusinhvien.pages.dev) for email links */
 export function getFrontendUrl(): string {
   if (env.FRONTEND_URL) return env.FRONTEND_URL.replace(/\/+$/, '');
   const pages = env.CORS_ORIGINS.find((o) => o.includes('pages.dev'));
@@ -374,5 +378,5 @@ export function getFrontendUrl(): string {
   if (env.CLOUDFLARE_PUBLIC_URL && !env.CLOUDFLARE_PUBLIC_URL.includes(env.API_HOST)) {
     return env.CLOUDFLARE_PUBLIC_URL.replace(/\/+$/, '');
   }
-  return 'https://tailieu-ttn.pages.dev';
+  return 'https://tailieusinhvien.pages.dev';
 }
