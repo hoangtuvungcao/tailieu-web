@@ -360,8 +360,23 @@ export function UploadPage() {
     <div className="container-page max-w-3xl py-8">
       <h1 className="text-2xl font-bold tracking-tight">Tải lên tài liệu</h1>
       <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">
-        Chia sẻ bài giảng, đề thi, giáo trình hoặc tài liệu học tập của bạn.
+        Chia sẻ ghi chép bài học, đề cương tóm tắt, sơ đồ tư duy hoặc bài tập tự luyện của bạn.
       </p>
+
+      {/* --- Copyright & Academic Guidelines Banner --- */}
+      <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-xs leading-relaxed text-[var(--color-muted-foreground)]">
+        <p className="font-semibold text-amber-600 dark:text-amber-400">
+          ⚠️ Quy định về bản quyền &amp; nội dung học tập:
+        </p>
+        <ul className="mt-1.5 list-disc space-y-1 pl-4">
+          <li>
+            <strong>KHÔNG tải lên:</strong> Bản scan giáo trình xuất bản thương mại, Slide bài giảng nguyên gốc của giảng viên khi chưa có sự đồng ý, hoặc Đề thi nội bộ thuộc diện bảo mật.
+          </li>
+          <li>
+            <strong>KHUYẾN KHÍCH:</strong> Ghi chép tự soạn (Student notes), Đề cương tóm tắt kiến thức, Sơ đồ tư duy (Mindmap), Bài tập tự luyện và Lời giải tham khảo.
+          </li>
+        </ul>
+      </div>
 
       {/* --- Drop zone ---------------------------------------------------- */}
       <div
@@ -686,17 +701,17 @@ export function UploadPage() {
             />
           </Field>
 
-          <label className="flex items-start gap-3 rounded-md border border-[var(--color-border)] p-3 text-sm">
+          <label className="flex items-start gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)]/20 p-3.5 text-sm cursor-pointer">
             <input
               type="checkbox"
               checked={form.confirmed}
               onChange={(event) => setForm({ ...form, confirmed: event.target.checked })}
-              className="mt-0.5 h-4 w-4"
+              className="mt-0.5 h-4 w-4 shrink-0"
             />
             <span>
-              Tôi xác nhận tài liệu này không vi phạm bản quyền và tôi có quyền chia sẻ nó.
+              <strong className="text-[var(--color-foreground)]">Cam kết về bản quyền &amp; học liệu mở:</strong> Tôi cam đoan tài liệu này do chính tôi ghi chép/tổng hợp hoặc là tài liệu học tập mở được phép chia sẻ, không xâm phạm quyền tác giả hay quy chế bảo mật thi cử.
               <span className="mt-1 block text-xs text-[var(--color-muted-foreground)]">
-                Tài liệu vi phạm sẽ bị gỡ bỏ và tài khoản có thể bị tạm ngưng.
+                Tài liệu bị khiếu nại bản quyền sẽ bị gỡ bỏ ngay lập tức và tài khoản vi phạm có thể bị đình chỉ.
               </span>
             </span>
           </label>

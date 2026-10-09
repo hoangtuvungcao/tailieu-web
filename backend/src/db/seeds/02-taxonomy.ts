@@ -162,7 +162,7 @@ export async function seedTaxonomy(): Promise<TaxonomySeedResult> {
             nameEn: type.nameEn,
             moderationPolicy: type.moderationPolicy,
             sortOrder: type.sortOrder,
-            isActive: true,
+            isActive: type.moderationPolicy !== 'blocked',
           })
           .where(eq(documentTypes.id, existing[0].id));
       } else {
@@ -172,6 +172,7 @@ export async function seedTaxonomy(): Promise<TaxonomySeedResult> {
           nameEn: type.nameEn,
           moderationPolicy: type.moderationPolicy,
           sortOrder: type.sortOrder,
+          isActive: type.moderationPolicy !== 'blocked',
         });
       }
     }

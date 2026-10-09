@@ -30,6 +30,8 @@
     "test:e2e": "bash scripts/e2e.sh",
     "maintenance:on": "bash scripts/maintenance.sh on",
     "maintenance:off": "bash scripts/maintenance.sh off",
-    "maintenance:status": "bash scripts/maintenance.sh status"
+    "maintenance:status": "bash scripts/maintenance.sh status",
+    "purge:audit": "bash scripts/purge-infringing-content.sh audit",
+    "purge:run": "bash scripts/purge-infringing-content.sh purge"
   }
 }
