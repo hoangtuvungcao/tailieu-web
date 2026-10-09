@@ -35,14 +35,14 @@ export async function seedUsers(): Promise<UsersSeedResult> {
       email: env.SEED_ADMIN_EMAIL,
       password: env.SEED_ADMIN_PASSWORD,
       displayName: 'Quản trị viên',
-      fullName: 'TAILIEU TTN Administrator',
+      fullName: 'Quản trị viên Hệ thống',
       role: 'super_admin' as const,
     },
     {
       email: env.SEED_MODERATOR_EMAIL,
       password: env.SEED_MODERATOR_PASSWORD,
       displayName: 'Kiểm duyệt viên',
-      fullName: 'TAILIEU TTN Moderator',
+      fullName: 'Kiểm duyệt viên Học liệu',
       role: 'moderator' as const,
     },
     {

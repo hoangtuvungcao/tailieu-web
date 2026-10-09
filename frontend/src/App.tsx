@@ -35,6 +35,7 @@ import { ProfileSettingsPage } from '@/pages/ProfileSettings';
 import { DocumentDetailPage } from '@/pages/DocumentDetail';
 import { DocumentsPage } from '@/pages/Documents';
 import { HomePage } from '@/pages/Home';
+import { CopyrightPolicyPage } from '@/pages/CopyrightPolicy';
 import { MaintenancePage } from '@/pages/Maintenance';
 import { UploadPage } from '@/pages/Upload';
 import {
@@ -369,14 +370,25 @@ function Header() {
 function Footer() {
   return (
     <footer className="mt-16 border-t border-[var(--color-border)] py-8">
-      <div className="container-page flex flex-col items-center justify-center gap-3 text-center text-sm text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:justify-between sm:text-left">
+      <div className="container-page flex flex-col items-center justify-center gap-4 text-center text-sm text-[var(--color-muted-foreground)] sm:flex-row sm:items-center sm:justify-between sm:text-left">
         <p className="flex items-center justify-center gap-2 sm:justify-start font-medium text-[var(--color-foreground)]">
           <LogoMark className="h-6 w-6" decorative />
           <span>Tài Liệu Sinh Viên — Nền tảng học tập cộng đồng</span>
         </p>
-        <p className="max-w-md text-xs leading-relaxed text-[var(--color-muted-foreground)]">
-          Dự án học thuật mở do cộng đồng sinh viên phát triển phục vụ mục đích tự học phi lợi nhuận. Website không trực thuộc và không đại diện cho bất kỳ cơ sở giáo dục nào.
-        </p>
+        <div className="flex flex-col items-center gap-1 sm:items-end text-xs">
+          <p className="max-w-md text-center leading-relaxed text-[var(--color-muted-foreground)] sm:text-right">
+            Dự án học thuật mở do cộng đồng sinh viên phát triển phục vụ tự học phi lợi nhuận.
+          </p>
+          <div className="flex items-center gap-3 pt-1">
+            <Link to="/policy/copyright" className="text-[var(--color-primary)] hover:underline font-medium">
+              Chính sách Bản quyền &amp; DMCA
+            </Link>
+            <span>•</span>
+            <a href="mailto:admin@5125121.com" className="text-[var(--color-muted-foreground)] hover:underline">
+              Liên hệ gỡ bỏ
+            </a>
+          </div>
+        </div>
       </div>
     </footer>
   );
@@ -566,6 +578,8 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="documents" element={<DocumentsPage />} />
+        <Route path="policy/copyright" element={<CopyrightPolicyPage />} />
+        <Route path="dmca" element={<CopyrightPolicyPage />} />
         <Route path="community" element={<CommunityPage />} />
         <Route path="community/:id" element={<PostDetailPage />} />
         <Route path="collections" element={<CollectionsPage />} />

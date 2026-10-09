@@ -28,10 +28,10 @@
     "test:frontend": "npm run test --workspace frontend",
     "test:proxy": "npm run test:proxy --workspace frontend",
     "test:e2e": "bash scripts/e2e.sh",
-    "maintenance:on": "bash scripts/maintenance.sh on",
-    "maintenance:off": "bash scripts/maintenance.sh off",
-    "maintenance:status": "bash scripts/maintenance.sh status",
-    "purge:audit": "bash scripts/purge-infringing-content.sh audit",
-    "purge:run": "bash scripts/purge-infringing-content.sh purge"
+    "maintenance:on": "npm run maintenance:on --workspace backend",
+    "maintenance:off": "npm run maintenance:off --workspace backend",
+    "maintenance:status": "npm run maintenance:status --workspace backend",
+    "purge:audit": "npm run purge:audit --workspace backend",
+    "purge:run": "npm run purge:run --workspace backend"
   }
 }

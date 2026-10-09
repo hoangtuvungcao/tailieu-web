@@ -193,7 +193,7 @@ const envSchema = z
 
     // Mail
     MAIL_DRIVER: z.enum(['console', 'file', 'smtp']).default('console'),
-    MAIL_FROM: z.string().default('TAILIEU TTN <no-reply@tailieu.local>'),
+    MAIL_FROM: z.string().default('Tài Liệu Sinh Viên <no-reply@tailieu.local>'),
     MAIL_FILE_PATH: z.string().default('./tmp/mail'),
     SMTP_HOST: z.string().optional().default(''),
     SMTP_PORT: intFromEnv(587, 1),

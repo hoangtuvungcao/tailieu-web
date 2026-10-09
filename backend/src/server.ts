@@ -37,7 +37,7 @@ async function main(): Promise<void> {
 
   app.log.info(
     { port: env.API_PORT, env: env.NODE_ENV, publicUrl: env.API_PUBLIC_URL },
-    'TAILIEU TTN API listening',
+    'Tài Liệu Sinh Viên API listening',
   );
 
   // --- Graceful shutdown -----------------------------------------------------

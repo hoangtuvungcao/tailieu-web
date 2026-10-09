@@ -817,22 +817,29 @@ export function DocumentDetailPage() {
                   Đây là tài liệu do bạn đăng tải
                 </div>
               ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full gap-2 border-[var(--color-destructive)]/30 text-[var(--color-destructive)] hover:bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)]"
-                  disabled={reportState.data?.reported}
-                  onClick={() => {
-                    if (!isAuthenticated) {
-                      navigate('/login');
-                    } else {
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2 border-[var(--color-destructive)]/30 text-[var(--color-destructive)] hover:bg-[color-mix(in_oklch,var(--color-destructive)_8%,transparent)]"
+                    disabled={reportState.data?.reported}
+                    onClick={() => {
                       setReportOpen(true);
-                    }
-                  }}
-                >
-                  <Flag className="h-4 w-4" />
-                  {reportState.data?.reported ? 'Đã báo cáo vi phạm' : 'Báo cáo tài liệu vi phạm'}
-                </Button>
+                    }}
+                  >
+                    <Flag className="h-4 w-4" />
+                    {reportState.data?.reported ? 'Đã báo cáo vi phạm' : 'Báo cáo tài liệu vi phạm'}
+                  </Button>
+                  <p className="mt-2 text-center text-[11px] text-[var(--color-muted-foreground)]">
+                    Tác giả / Giảng viên yêu cầu gỡ bỏ?{' '}
+                    <Link
+                      to="/policy/copyright"
+                      className="text-[var(--color-primary)] hover:underline"
+                    >
+                      Quy trình DMCA (12–24h)
+                    </Link>
+                  </p>
+                </>
               )}
 
               {download.isError ? (

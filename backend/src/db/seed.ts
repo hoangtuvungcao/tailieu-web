@@ -20,7 +20,7 @@ import { seedBadges } from './seeds/05-badges.js';
 const notes: string[] = [];
 
 async function main(): Promise<void> {
-  console.log('\nSeeding TAILIEU TTN\n');
+  console.log('\nSeeding TÀI LIỆU SINH VIÊN\n');
 
   process.stdout.write('  → roles and permissions ... ');
   const rbac = await seedRbac();

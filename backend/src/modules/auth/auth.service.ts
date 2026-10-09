@@ -567,11 +567,11 @@ export async function sendVerificationEmail(
 
   await getMailer().send({
     to: email,
-    subject: 'Xác minh địa chỉ email — TAILIEU TTN',
+    subject: 'Xác minh địa chỉ email — Tài Liệu Sinh Viên',
     text: [
       `Xin chào ${displayName},`,
       '',
-      'Cảm ơn bạn đã đăng ký tài khoản TAILIEU TTN.',
+      'Cảm ơn bạn đã đăng ký tài khoản Tài Liệu Sinh Viên.',
       'Vui lòng xác minh địa chỉ email bằng liên kết dưới đây:',
       '',
       link,
@@ -579,7 +579,7 @@ export async function sendVerificationEmail(
       'Liên kết này có hiệu lực trong 7 ngày.',
       'Nếu bạn không thực hiện đăng ký này, hãy bỏ qua email này.',
       '',
-      '— TAILIEU TTN',
+      '— Ban quản trị Tài Liệu Sinh Viên',
     ].join('\n'),
   });
 }
@@ -639,27 +639,27 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
   await getMailer().send({
     to: user.email,
-    subject: 'Đặt lại mật khẩu — TAILIEU TTN',
+    subject: 'Đặt lại mật khẩu — Tài Liệu Sinh Viên',
     text: [
       `Xin chào ${user.displayName},`,
       '',
-      'Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.',
+      'Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn tại Tài Liệu Sinh Viên.',
       '',
       link,
       '',
       'Liên kết này có hiệu lực trong 1 giờ và chỉ sử dụng được một lần.',
       'Nếu bạn không yêu cầu điều này, hãy bỏ qua email — mật khẩu của bạn vẫn an toàn.',
       '',
-      '— TAILIEU TTN',
+      '— Ban quản trị Tài Liệu Sinh Viên',
     ].join('\n'),
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h2 style="color: #1e3a8a; margin: 0; font-size: 20px;">TAILIEU TTN</h2>
-          <p style="color: #6b7280; font-size: 13px; margin: 4px 0 0;">Kho tri thức cộng đồng Đại học Tây Nguyên</p>
+          <h2 style="color: #1e3a8a; margin: 0; font-size: 20px;">Tài Liệu Sinh Viên</h2>
+          <p style="color: #6b7280; font-size: 13px; margin: 4px 0 0;">Cộng đồng chia sẻ học tập mở cho sinh viên</p>
         </div>
         <p style="color: #1f2937; font-size: 15px; line-height: 1.6;">Xin chào <strong>${user.displayName}</strong>,</p>
-        <p style="color: #1f2937; font-size: 15px; line-height: 1.6;">Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản TAILIEU TTN của bạn. Nhấn vào nút bên dưới để tiến hành đổi mật khẩu mới:</p>
+        <p style="color: #1f2937; font-size: 15px; line-height: 1.6;">Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản Tài Liệu Sinh Viên của bạn. Nhấn vào nút bên dưới để tiến hành đổi mật khẩu mới:</p>
         <div style="text-align: center; margin: 28px 0;">
           <a href="${link}" style="background-color: #2563eb; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-block;">Đặt lại mật khẩu</a>
         </div>

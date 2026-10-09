@@ -135,13 +135,13 @@ export const DEFAULT_SETTINGS: {
   // --- SEO and branding ----------------------------------------------------
   {
     key: 'site_name',
-    value: 'TAILIEU TTN',
+    value: 'Tài Liệu Sinh Viên',
     category: 'branding',
     description: 'Tên hiển thị của nền tảng.',
   },
   {
     key: 'site_description',
-    value: 'Kho tri thức cộng đồng Đại học Tây Nguyên',
+    value: 'Nền tảng chia sẻ tài liệu, bài giảng và kinh nghiệm học tập dành cho sinh viên',
     category: 'branding',
     description: 'Mô tả dùng cho thẻ meta và chia sẻ mạng xã hội.',
   },

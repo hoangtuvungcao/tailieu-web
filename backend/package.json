@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "TAILIEU TTN REST API \u2014 Fastify + PostgreSQL + Redis + S3",
+  "description": "Tài Liệu Sinh Viên REST API — Fastify + PostgreSQL + Redis + S3",
   "main": "dist/server.js",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts",
@@ -23,7 +23,12 @@
     "db:studio": "drizzle-kit studio",
     "worker:converter": "tsx src/workers/converter/index.ts",
     "cleanup": "tsx src/workers/cleanup/index.ts",
-    "test:setup": "tsx scripts/setup-test-db.ts"
+    "test:setup": "tsx scripts/setup-test-db.ts",
+    "maintenance:on": "tsx scripts/manage-maintenance.ts on",
+    "maintenance:off": "tsx scripts/manage-maintenance.ts off",
+    "maintenance:status": "tsx scripts/manage-maintenance.ts status",
+    "purge:audit": "tsx scripts/manage-purge.ts audit",
+    "purge:run": "tsx scripts/manage-purge.ts purge"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.716.0",

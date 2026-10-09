@@ -117,7 +117,7 @@ class SmtpMailer implements Mailer {
 
       let fromAddress = env.MAIL_FROM;
       if (isGmail && env.SMTP_USER && fromAddress.includes('tailieu.local')) {
-        fromAddress = `TAILIEU TTN <${env.SMTP_USER}>`;
+        fromAddress = `Tài Liệu Sinh Viên <${env.SMTP_USER}>`;
       }
 
       await this.getTransporter().sendMail({
