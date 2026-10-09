@@ -269,6 +269,12 @@ async function requestEnvelope<T>(
       loseSession();
     }
 
+    if (code === 'MAINTENANCE_MODE' || response.status === 503) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app:maintenance'));
+      }
+    }
+
     throw new ApiError(code, message, response.status, body?.error?.details);
   }
 

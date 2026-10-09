@@ -35,6 +35,7 @@ import { ProfileSettingsPage } from '@/pages/ProfileSettings';
 import { DocumentDetailPage } from '@/pages/DocumentDetail';
 import { DocumentsPage } from '@/pages/Documents';
 import { HomePage } from '@/pages/Home';
+import { MaintenancePage } from '@/pages/Maintenance';
 import { UploadPage } from '@/pages/Upload';
 import {
   ForgotPasswordPage,
@@ -519,6 +520,46 @@ export function App() {
     }
     previousUserId.current = user?.id;
   }, [user?.id, queryClient]);
+
+  const [bypassMaintenance, setBypassMaintenance] = useState(() => {
+    try {
+      return (
+        sessionStorage.getItem('maintenance_bypass') === 'true' ||
+        new URLSearchParams(window.location.search).get('bypass') === '1'
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  const [isApiMaintenance, setIsApiMaintenance] = useState(false);
+
+  useEffect(() => {
+    const handleMaintenance = () => setIsApiMaintenance(true);
+    window.addEventListener('app:maintenance', handleMaintenance);
+    return () => window.removeEventListener('app:maintenance', handleMaintenance);
+  }, []);
+
+  const isMaintenance =
+    ((import.meta.env.VITE_MAINTENANCE_MODE === 'true' ||
+      import.meta.env.VITE_MAINTENANCE_MODE === '1') ||
+      isApiMaintenance) &&
+    !bypassMaintenance;
+
+  if (isMaintenance) {
+    return (
+      <MaintenancePage
+        onBypass={() => {
+          try {
+            sessionStorage.setItem('maintenance_bypass', 'true');
+          } catch {
+            // storage may be restricted in private browsing
+          }
+          setBypassMaintenance(true);
+        }}
+      />
+    );
+  }
 
   return (
     <Routes>

@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { db, type Database } from '../../../db/client.js';
 import { collectionItems, collections, users } from '../../../db/schema/index.js';
@@ -88,10 +88,12 @@ export interface CollectionListOptions {
 }
 
 /**
- * The discover list: public and internal collections the viewer is allowed to see.
+ * The discover list: collections the viewer is allowed to see.
  *
- * Private collections must NEVER appear on the discover feed, even for their
- * owner (who finds and manages their collections under "Của tôi" / listOwnCollections).
+ * Note that `collectionVisibilityPredicate` already includes the viewer's own
+ * private collections, so an owner browsing this list sees their drafts in it.
+ * That is intended — the alternative is a user who cannot find their own
+ * collection from the page that lists collections.
  */
 export async function listCollections(
   options: CollectionListOptions,
@@ -99,19 +101,7 @@ export async function listCollections(
   viewer: Viewer,
   executor: Executor = db,
 ) {
-  const discoverClauses: SQL[] = [sql`${collections.visibility} = 'public'`];
-
-  if (viewer.userId) {
-    discoverClauses.push(sql`${collections.visibility} = 'internal'`);
-  }
-
-  const predicates: SQL[] = [
-    and(
-      sql`${collections.deletedAt} IS NULL`,
-      sql`${collections.visibility} <> 'private'`,
-      or(...discoverClauses),
-    )!,
-  ];
+  const predicates: SQL[] = [collectionVisibilityPredicate(viewer)];
 
   if (options.ownerUserId) predicates.push(eq(collections.ownerUserId, options.ownerUserId));
 
@@ -499,8 +489,8 @@ export async function applyOrder(
 
   const ranked = orderedIds.length === 0
     ? // No ids: a plain renumber into the existing order. Handled separately
-      // because `VALUES` with zero rows is a syntax error.
-      sql`
+    // because `VALUES` with zero rows is a syntax error.
+    sql`
         SELECT ci.id,
                row_number() OVER (
                  ORDER BY ci.position, ci.created_at, ci.id

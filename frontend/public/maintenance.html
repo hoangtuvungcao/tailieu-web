@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thông báo bảo trì hệ thống</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --primary: #3b82f6;
+      --amber: #f59e0b;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f9fafb;
+        --card-bg: #ffffff;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #2563eb;
+        --amber: #d97706;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      max-width: 520px;
+      width: 100%;
+      padding: 2.5rem 2rem;
+      text-align: center;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    .icon-wrapper {
+      width: 64px;
+      height: 64px;
+      background: rgba(245, 158, 11, 0.12);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+      color: var(--amber);
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    p.sub {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: 1.75rem;
+    }
+    .notice-box {
+      background: rgba(156, 163, 175, 0.08);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      text-align: left;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+    .notice-title {
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 0.625rem 1.25rem;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 0.5rem;
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: rgba(156, 163, 175, 0.15);
+    }
+    .footer {
+      margin-top: 1.75rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-wrapper">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+      </svg>
+    </div>
+    <h1>Hệ Thống Đang Tạm Bảo Trì</h1>
+    <p class="sub">Nâng cấp hạ tầng và rà soát cơ sở dữ liệu học tập cộng đồng</p>
+
+    <div class="notice-box">
+      <div class="notice-title">
+        <span>📢 Thông báo từ Ban Quản Trị</span>
+      </div>
+      <p>
+        Nhằm nâng cấp trải nghiệm người dùng và rà soát các nguồn học liệu theo quy định, website đang tạm đóng để nâng cấp hệ thống.
+      </p>
+      <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--muted);">
+        ⏱️ Thời gian dự kiến hoàn tất: Sẽ có thông báo sớm nhất.
+      </p>
+    </div>
+
+    <p style="font-size: 0.8rem; color: var(--muted); margin-bottom: 1.5rem;">
+      Mọi thắc mắc hoặc phản ánh nội dung, vui lòng liên hệ nhóm quản trị. Cảm ơn sự đồng hành và thông cảm của các bạn!
+    </p>
+
+    <div>
+      <a href="mailto:admin@5125121.com" class="btn">✉️ Liên hệ hỗ trợ</a>
+    </div>
+
+    <div class="footer">
+      &copy; Nền tảng chia sẻ học thuật phi lợi nhuận
+    </div>
+  </div>
+</body>
+</html>
